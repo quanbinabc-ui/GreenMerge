@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="vi" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CivicMerge Operations — Bảng điều phối Ban quản lý</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-group">
+        <div class="brand-logo" aria-hidden="true">CM</div>
+        <div>
+          <h1>CivicMerge Operations</h1>
+          <p class="subtitle">One Issue, One Record · Trung tâm tiếp nhận &amp; điều phối sự cố đô thị</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div id="health-status" class="health-pill offline">
+          <span class="status-dot"></span>
+          <span id="health-label">Chưa kết nối máy chủ</span>
+        </div>
+        <button id="btn-refresh" type="button" class="btn ghost" title="Tải lại dữ liệu">↻ Tải lại</button>
+        <button id="btn-theme" type="button" class="btn ghost" title="Đổi giao diện Sáng / Tối">🌙 Giao diện tối</button>
+        <button id="btn-open-connect" type="button" class="btn primary">⚙ Kết nối &amp; Đăng nhập</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <div id="feedback-box" class="feedback hidden" role="status"></div>
+
+      <section class="kpi-grid">
+        <div class="kpi-card kpi-open">
+          <span class="kpi-label">Mới tiếp nhận</span>
+          <strong id="kpi-open">0</strong>
+          <span class="kpi-sub">Chờ phân công / khảo sát</span>
+        </div>
+        <div class="kpi-card kpi-progress">
+          <span class="kpi-label">Đang xử lý</span>
+          <strong id="kpi-progress">0</strong>
+          <span class="kpi-sub">Các tổ đang thi công</span>
+        </div>
+        <div class="kpi-card kpi-resolved">
+          <span class="kpi-label">Đã xử lý</span>
+          <strong id="kpi-resolved">0</strong>
+          <span class="kpi-sub">Đã hoàn thành &amp; đóng hồ sơ</span>
+        </div>
+        <div class="kpi-card kpi-merged">
+          <span class="kpi-label">Hiệu quả gom trùng</span>
+          <strong id="kpi-reports">0</strong>
+          <span id="kpi-merge-sub" class="kpi-sub">0% báo cáo trùng đã được hợp nhất</span>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <div class="card main-card">
+          <div class="toolbar">
+            <div class="view-tabs" role="tablist">
+              <button id="tab-list" type="button" class="view-tab active" role="tab" aria-selected="true">Danh sách ưu tiên</button>
+              <button id="tab-map" type="button" class="view-tab" role="tab" aria-selected="false">Bản đồ điểm nóng</button>
+            </div>
+            <form id="search-form" class="search-form">
+              <input id="search-input" type="search" placeholder="Tìm mô tả, địa chỉ, tổ xử lý..." />
+              <button type="submit" class="btn secondary">Tìm</button>
+            </form>
+          </div>
+
+          <div class="filter-bar">
+            <select id="filter-type" aria-label="Lọc theo loại sự cố">
+              <option value="">Tất cả loại sự cố</option>
+              <option value="pothole">Ổ gà</option>
+              <option value="trash">Rác thải</option>
+              <option value="flood">Ngập nước</option>
+            </select>
+            <select id="filter-status" aria-label="Lọc theo trạng thái">
+              <option value="">Mọi trạng thái</option>
+              <option value="open">Mới tiếp nhận</option>
+              <option value="in_progress">Đang xử lý</option>
+              <option value="resolved">Đã xử lý</option>
+            </select>
+            <select id="filter-severity" aria-label="Lọc theo mức độ">
+              <option value="">Mọi mức độ</option>
+              <option value="high">Cao</option>
+              <option value="medium">Trung bình</option>
+              <option value="low">Thấp</option>
+            </select>
+          </div>
+
+          <div id="view-list" class="view-pane">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ảnh</th>
+                    <th>Phân loại &amp; Trạng thái</th>
+                    <th>Nội dung sự cố &amp; Vị trí</th>
+                    <th>Minh chứng</th>
+                    <th>Cập nhật</th>
+                  </tr>
+                </thead>
+                <tbody id="queue-body"></tbody>
+              </table>
+            </div>
+
+            <div class="pagination-bar">
+              <span id="pagination-info" class="sub-cell">Hiển thị 0–0 / 0 hồ sơ</span>
+              <div class="pagination-actions">
+                <button id="btn-prev" type="button" class="btn ghost">← Trước</button>
+                <button id="btn-next" type="button" class="btn ghost">Sau →</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="view-map" class="view-pane hidden">
+            <div class="map-legend">
+              <span><i class="legend-dot dot-open"></i> Mới tiếp nhận</span>
+              <span><i class="legend-dot dot-progress"></i> Đang xử lý</span>
+              <span><i class="legend-dot dot-resolved"></i> Đã xử lý</span>
+              <span class="sub-cell">Kích thước điểm tỷ lệ với số lượt phản ánh đã gom</span>
+            </div>
+            <div id="hotspot-canvas" class="hotspot-canvas"></div>
+          </div>
+        </div>
+
+        <aside id="detail-panel" class="card detail-panel"></aside>
+      </section>
+    </main>
+
+    <!-- Connection & Login Modal -->
+    <div id="connect-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="connect-modal-title">
+      <div class="card modal-card">
+        <div class="modal-header">
+          <div>
+            <h2 id="connect-modal-title">Kết nối máy chủ &amp; Đăng nhập</h2>
+            <p class="sub-cell">Thông tin phiên chỉ lưu tạm trong sessionStorage của trình duyệt.</p>
+          </div>
+          <button id="connect-close" type="button" class="btn ghost">✕</button>
+        </div>
+
+        <div class="auth-mode-tabs">
+          <button id="auth-tab-email" type="button" class="view-tab active">Đăng nhập Email</button>
+          <button id="auth-tab-key" type="button" class="view-tab">Khóa kỹ thuật / JWT</button>
+        </div>
+
+        <form id="connect-form" class="stack-form">
+          <label class="field-label">
+            Địa chỉ Backend API
+            <input id="api-url" type="url" placeholder="http://127.0.0.1:3055" required />
+          </label>
+
+          <div id="auth-panel-email" class="stack-form">
+            <label class="field-label">
+              Email cán bộ / Ban quản lý
+              <input id="login-email" type="email" placeholder="operator@civicmerge.vn" autocomplete="username" />
+            </label>
+            <label class="field-label">
+              Mật khẩu
+              <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+            </label>
+            <p class="sub-cell">Để trống Email/Mật khẩu nếu máy chủ đang tắt AUTH_MODE (chế độ demo/LAN).</p>
+          </div>
+
+          <div id="auth-panel-key" class="stack-form hidden">
+            <label class="field-label">
+              Operator Key (tùy chọn)
+              <input id="operator-key" type="password" placeholder="X-Operator-Key" autocomplete="off" />
+            </label>
+            <label class="field-label">
+              JWT Bearer Token (tùy chọn)
+              <input id="bearer-token" type="password" placeholder="eyJhbGci..." autocomplete="off" />
+            </label>
+          </div>
+
+          <div id="signed-in-bar" class="signed-in-bar hidden">
+            <span id="signed-in-label"></span>
+            <button id="btn-logout" type="button" class="btn ghost">Đăng xuất</button>
+          </div>
+
+          <div class="modal-footer">
+            <button type="submit" class="btn primary">Kết nối &amp; Tải dữ liệu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="lightbox-modal" class="lightbox hidden" role="dialog" aria-modal="true">
+      <div class="lightbox-header">
+        <span id="lightbox-caption"></span>
+        <button id="lightbox-close" type="button" class="btn ghost light-btn">✕ Đóng</button>
+      </div>
+      <img id="lightbox-img" alt="Xem ảnh phóng to" />
+    </div>
+
+    <script type="module" src="/dist/app.js"></script>
+  </body>
+</html>

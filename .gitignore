@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.expo/
+dist/
+coverage/
+*.log
+.runtime/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/credentials.json
+*.keystore
+*.jks
+*.apk
+*.aab

@@ -1,0 +1,55 @@
+name: CivicMerge CI
+
+on:
+  push:
+    branches: [main, 'feat/**', 'feature/**', 'chore/**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      NODE_ENV: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck workspace
+        run: npm run typecheck
+
+      - name: Lint mobile workspace
+        run: npm run lint
+
+      - name: Module smoke checks
+        run: npm run test:modules
+
+      - name: AI Vision unit tests
+        run: npm run test --workspace=@civicmerge/ai-vision
+
+      - name: Matching unit tests
+        run: npm run test --workspace=@civicmerge/matching
+
+      - name: Mobile helper unit tests
+        run: npm run test:mobile
+
+      - name: Storage unit tests
+        run: npm run test:storage
+
+      - name: Demo control unit tests
+        run: npm run test:demo
+
+      - name: Web Admin build & unit tests
+        run: npm run build:admin && npm run test:admin
+
+      - name: HTTP integration tests
+        run: npm run test:integration

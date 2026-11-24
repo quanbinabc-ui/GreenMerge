@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "node": "24.21.0",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_MOCK_MODE": "true",
+        "EXPO_PUBLIC_MOCK_CONTROLS": "false"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "developmentClient": false,
+      "node": "24.21.0",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_MOCK_MODE": "false",
+        "EXPO_PUBLIC_MOCK_CONTROLS": "false"
+      }
+    }
+  }
+}
