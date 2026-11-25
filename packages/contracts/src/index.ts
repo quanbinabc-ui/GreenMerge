@@ -58,7 +58,15 @@ export const IncidentSummarySchema = z.object({
 });
 export const HistoryEventSchema = z.object({
   at: z.string().datetime(),
-  event: z.enum(['created', 'report_merged', 'status_changed', 'team_reassigned']),
+  event: z.enum([
+    'created',
+    'report_merged',
+    'status_changed',
+    'team_reassigned',
+    'volunteer_event_created',
+    'volunteer_after_submitted',
+    'volunteer_verified',
+  ]),
   reportId: z.string().uuid().optional(),
   fromStatus: IncidentStatusSchema.optional(),
   toStatus: IncidentStatusSchema.optional(),
@@ -138,6 +146,112 @@ export const IncidentListResponseSchema = z.object({
   incidents: z.array(IncidentSummarySchema),
   total: z.number().int().nonnegative().optional(),
 });
+
+// Tier-2 Community Volunteer Actions ("Buổi Tình Nguyện Xanh")
+export const VolunteerEventStatusSchema = z.enum(['recruiting', 'in_progress', 'pending_review', 'verified', 'cancelled']);
+export const VolunteerParticipantStatusSchema = z.enum(['joined', 'checked_in', 'certified', 'cancelled']);
+export const VolunteerEventSchema = z.object({
+  id: z.string().uuid(),
+  incidentId: z.string().uuid(),
+  title: z.string().min(1).max(160),
+  description: z.string().max(1000),
+  scheduledAt: z.string().datetime(),
+  meetingPoint: z.string().min(1).max(300),
+  maxParticipants: z.number().int().min(2).max(50),
+  participantCount: z.number().int().nonnegative(),
+  status: VolunteerEventStatusSchema,
+  organizerId: z.string().uuid().nullable(),
+  organizerName: z.string().min(1).max(120),
+  beforeImageUrl: z.string().url(),
+  afterImageUrl: z.string().url().nullable(),
+  reviewNote: z.string().max(500).nullable(),
+  reviewedBy: z.string().max(120).nullable(),
+  reviewedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export const VolunteerParticipantSchema = z.object({
+  id: z.string().uuid(),
+  eventId: z.string().uuid(),
+  userId: z.string().uuid(),
+  displayName: z.string().min(1).max(120),
+  status: VolunteerParticipantStatusSchema,
+  joinedAt: z.string().datetime(),
+  certificateCode: z.string().max(64).nullable().optional(),
+});
+export const VolunteerIncidentSummarySchema = z.object({
+  id: z.string().uuid(),
+  type: IncidentTypeSchema,
+  severity: SeveritySchema,
+  description: z.string(),
+  status: IncidentStatusSchema,
+  address: z.string().max(300).nullable().optional(),
+  location: LocationSchema.nullable(),
+  coverImageUrl: z.string().url(),
+});
+export const VolunteerEventDetailSchema = VolunteerEventSchema.extend({
+  participants: z.array(VolunteerParticipantSchema),
+  incidentSummary: VolunteerIncidentSummarySchema,
+});
+export const VolunteerCertificateSchema = z.object({
+  id: z.string().uuid(),
+  certificateCode: z.string().regex(/^GM-\d{4}-[A-Z0-9]{6}$/),
+  eventId: z.string().uuid(),
+  eventTitle: z.string().min(1).max(160),
+  incidentId: z.string().uuid(),
+  userId: z.string().uuid(),
+  recipientName: z.string().min(1).max(120),
+  completedAt: z.string().datetime(),
+  issuedBy: z.string().min(1).max(120),
+  issuedAt: z.string().datetime(),
+});
+export const PublicVolunteerCertificateSchema = VolunteerCertificateSchema.omit({ userId: true });
+export const CreateVolunteerEventRequestSchema = z.object({
+  title: z.string().trim().min(3).max(160),
+  description: z.string().trim().max(1000).optional().default(''),
+  scheduledAt: z.string().datetime(),
+  meetingPoint: z.string().trim().min(2).max(300),
+  maxParticipants: z.number().int().min(2).max(50).default(15),
+  organizerName: z.string().trim().min(1).max(120).optional(),
+}).strict();
+export const JoinVolunteerEventRequestSchema = z.object({
+  displayName: z.string().trim().min(1).max(120).optional(),
+}).strict();
+export const ReviewVolunteerEventRequestSchema = z.object({
+  decision: z.enum(['approve', 'reject']),
+  note: z.string().trim().min(1).max(500).optional(),
+  actor: z.string().trim().min(1).max(120).optional(),
+  issueCertificates: z.boolean().default(true),
+}).strict();
+export const VolunteerEventListFilterSchema = z.object({
+  status: VolunteerEventStatusSchema.optional(),
+  incidentId: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  offset: z.number().int().min(0).optional(),
+}).strict();
+export const VolunteerStatsSchema = z.object({
+  verifiedEvents: z.number().int().nonnegative(),
+  totalCertificates: z.number().int().nonnegative(),
+});
+export const VolunteerEventListResponseSchema = z.object({
+  events: z.array(VolunteerEventSchema),
+  total: z.number().int().nonnegative().optional(),
+  stats: VolunteerStatsSchema.optional(),
+});
+export const ReviewVolunteerEventResponseSchema = z.object({
+  event: VolunteerEventDetailSchema,
+  certificatesIssued: z.number().int().nonnegative(),
+});
+export const MyCertificatesResponseSchema = z.object({
+  certificates: z.array(VolunteerCertificateSchema),
+});
+
+export function isIncidentSafeForVolunteer(incident: { type: IncidentType; severity: Severity; status: IncidentStatus }): boolean {
+  if (incident.status === 'resolved') return false;
+  if (incident.type === 'trash') return true;
+  if (incident.type === 'flood' && incident.severity === 'low') return true;
+  return false;
+}
 export const ApiErrorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 export const BackendCapabilitiesSchema = z.object({
   persistence: z.enum(['memory', 'postgres']), storage: z.enum(['local', 'supabase']),
@@ -175,6 +289,22 @@ export type ConfirmRequest = z.infer<typeof ConfirmRequestSchema>;
 export type ConfirmResponse = z.infer<typeof ConfirmResponseSchema>;
 export type MockScenario = z.infer<typeof MockScenarioSchema>;
 export type BackendCapabilities = z.infer<typeof BackendCapabilitiesSchema>;
+export type VolunteerEventStatus = z.infer<typeof VolunteerEventStatusSchema>;
+export type VolunteerParticipantStatus = z.infer<typeof VolunteerParticipantStatusSchema>;
+export type VolunteerEvent = z.infer<typeof VolunteerEventSchema>;
+export type VolunteerParticipant = z.infer<typeof VolunteerParticipantSchema>;
+export type VolunteerIncidentSummary = z.infer<typeof VolunteerIncidentSummarySchema>;
+export type VolunteerEventDetail = z.infer<typeof VolunteerEventDetailSchema>;
+export type VolunteerCertificate = z.infer<typeof VolunteerCertificateSchema>;
+export type PublicVolunteerCertificate = z.infer<typeof PublicVolunteerCertificateSchema>;
+export type CreateVolunteerEventRequest = z.input<typeof CreateVolunteerEventRequestSchema>;
+export type JoinVolunteerEventRequest = z.infer<typeof JoinVolunteerEventRequestSchema>;
+export type ReviewVolunteerEventRequest = z.input<typeof ReviewVolunteerEventRequestSchema>;
+export type VolunteerEventListFilter = z.infer<typeof VolunteerEventListFilterSchema>;
+export type VolunteerStats = z.infer<typeof VolunteerStatsSchema>;
+export type VolunteerEventListResponse = z.infer<typeof VolunteerEventListResponseSchema>;
+export type ReviewVolunteerEventResponse = z.infer<typeof ReviewVolunteerEventResponseSchema>;
+export type MyCertificatesResponse = z.infer<typeof MyCertificatesResponseSchema>;
 
 export interface ImageInput { bytes: Uint8Array; mimeType: string }
 export interface VisionAnalyzer { analyzeIncidentImage(image: ImageInput): Promise<AIAnalysis> }
@@ -231,6 +361,33 @@ export interface IncidentRepository {
   listPushTokensForIncident?(incidentId: string): Promise<string[]>;
   listExpiredPendingReports?(olderThanIso: string): Promise<Report[]>;
   deletePendingReport?(id: string): Promise<boolean>;
+  createVolunteerEvent?(input: {
+    incidentId: string;
+    title: string;
+    description: string;
+    scheduledAt: string;
+    meetingPoint: string;
+    maxParticipants: number;
+    organizerId: string | null;
+    organizerName: string;
+  }): Promise<VolunteerEventDetail>;
+  listVolunteerEvents?(filter?: VolunteerEventListFilter): Promise<VolunteerEvent[]>;
+  countVolunteerEvents?(filter?: Omit<VolunteerEventListFilter, 'limit' | 'offset'>): Promise<number>;
+  getVolunteerStats?(): Promise<VolunteerStats>;
+  getVolunteerEvent?(id: string): Promise<VolunteerEventDetail | null>;
+  joinVolunteerEvent?(eventId: string, input: { userId: string; displayName: string }): Promise<VolunteerEventDetail>;
+  leaveVolunteerEvent?(eventId: string, userId: string): Promise<VolunteerEventDetail>;
+  submitVolunteerAfterImage?(eventId: string, input: { imageUrl: string; actorId?: string | null; actor?: string }): Promise<VolunteerEventDetail>;
+  reviewVolunteerEvent?(eventId: string, input: {
+    decision: 'approve' | 'reject';
+    note?: string;
+    actor?: string;
+    actorId?: string | null;
+    issueCertificates?: boolean;
+  }): Promise<{ event: VolunteerEventDetail; certificates: VolunteerCertificate[] }>;
+  listCertificatesByUser?(userId: string): Promise<VolunteerCertificate[]>;
+  findCertificateByCode?(code: string): Promise<VolunteerCertificate | null>;
+  listPushTokensForVolunteerEvent?(eventId: string): Promise<string[]>;
   reset(): Promise<void>;
 }
 export class DomainError extends Error {

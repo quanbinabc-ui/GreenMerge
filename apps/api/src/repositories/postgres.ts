@@ -1,13 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import { PendingReportWriteRejected } from './errors.js';
-import { assertStatusTransition, boundingBoxFor, escalateSeverity, mergeFeatures } from './bounds.js';
+import {
+  assertIncidentSafeForVolunteer, assertStatusTransition, boundingBoxFor,
+  escalateSeverity, generateCertificateCode, mergeFeatures,
+} from './bounds.js';
 import {
   AIAnalysisSchema, AnalyzeResponseSchema, ConfirmRequestSchema, ConfirmResponseSchema, DomainError,
   IncidentDetailSchema, IncidentListFilterSchema, IncidentSummarySchema, LocationSchema,
   ReassignTeamRequestSchema, ReportSchema, RoutingRuleSchema, UpdateIncidentStatusRequestSchema,
+  VolunteerCertificateSchema, VolunteerEventDetailSchema, VolunteerEventListFilterSchema,
+  VolunteerEventSchema, VolunteerParticipantSchema,
   type HistoryEvent, type IncidentListFilter, type IncidentRepository, type IncidentStatus,
-  type NearbyIncidentQuery, type Severity,
+  type IncidentType, type NearbyIncidentQuery, type Severity, type VolunteerCertificate,
+  type VolunteerEventListFilter,
 } from '@civicmerge/contracts';
 
 const iso = (value: Date) => value.toISOString();
@@ -32,6 +38,84 @@ function summary(row: QueryResultRow) {
     ...(row.resolution_image_url !== undefined && row.resolution_image_url !== null
       ? { resolutionImageUrl: row.resolution_image_url } : {}),
     createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
+  });
+}
+function volunteerEventRow(row: QueryResultRow) {
+  return VolunteerEventSchema.parse({
+    id: row.id,
+    incidentId: row.incident_id,
+    title: row.title,
+    description: row.description ?? '',
+    scheduledAt: iso(row.scheduled_at),
+    meetingPoint: row.meeting_point,
+    maxParticipants: Number(row.max_participants),
+    participantCount: Number(row.participant_count),
+    status: row.status,
+    organizerId: row.organizer_id ?? null,
+    organizerName: row.organizer_name,
+    beforeImageUrl: row.before_image_url,
+    afterImageUrl: row.after_image_url ?? null,
+    reviewNote: row.review_note ?? null,
+    reviewedBy: row.reviewed_by ?? null,
+    reviewedAt: row.reviewed_at ? iso(row.reviewed_at) : null,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  });
+}
+function volunteerParticipantRow(row: QueryResultRow) {
+  return VolunteerParticipantSchema.parse({
+    id: row.id,
+    eventId: row.event_id,
+    userId: row.user_id,
+    displayName: row.display_name,
+    status: row.status,
+    joinedAt: iso(row.joined_at),
+    certificateCode: row.certificate_code ?? null,
+  });
+}
+function volunteerCertificateRow(row: QueryResultRow) {
+  return VolunteerCertificateSchema.parse({
+    id: row.id,
+    certificateCode: row.certificate_code,
+    eventId: row.event_id,
+    eventTitle: row.event_title,
+    incidentId: row.incident_id,
+    userId: row.user_id,
+    recipientName: row.recipient_name,
+    completedAt: iso(row.completed_at),
+    issuedBy: row.issued_by,
+    issuedAt: iso(row.issued_at),
+  });
+}
+async function readVolunteerDetailInClient(client: PoolClient, eventId: string) {
+  const evResult = await client.query('SELECT * FROM civicmerge.volunteer_events WHERE id = $1', [eventId]);
+  if (!evResult.rows[0]) return null;
+  const evRow = evResult.rows[0];
+  const incidentResult = await client.query('SELECT * FROM civicmerge.incidents WHERE id = $1', [evRow.incident_id]);
+  if (!incidentResult.rows[0]) throw new DomainError('INCIDENT_NOT_FOUND', 'Không tìm thấy hồ sơ sự cố liên kết.', 404);
+  const incRow = incidentResult.rows[0];
+  const participantsResult = await client.query(
+    `SELECT vp.*, vc.certificate_code
+     FROM civicmerge.volunteer_participants vp
+     LEFT JOIN civicmerge.volunteer_certificates vc
+       ON vc.event_id = vp.event_id AND vc.user_id = vp.user_id
+     WHERE vp.event_id = $1
+     ORDER BY vp.joined_at ASC, vp.id ASC`,
+    [eventId],
+  );
+  return VolunteerEventDetailSchema.parse({
+    ...volunteerEventRow(evRow),
+    participants: participantsResult.rows.map(volunteerParticipantRow),
+    incidentSummary: {
+      id: incRow.id,
+      type: incRow.type,
+      severity: incRow.severity,
+      description: incRow.description,
+      status: incRow.status,
+      ...(incRow.address !== undefined && incRow.address !== null ? { address: incRow.address } : {}),
+      location: location(incRow),
+      coverImageUrl: incRow.cover_image_url,
+    },
   });
 }
 
@@ -402,6 +486,340 @@ export function createPostgresRepository(pool: Pool): IncidentRepository {
         maxLng: row.max_lng ?? null,
         active: Boolean(row.active),
       }));
+    },
+    async createVolunteerEvent(input) {
+      if (!IncidentSummarySchema.shape.id.safeParse(input.incidentId).success) {
+        throw new DomainError('INCIDENT_NOT_FOUND', 'Không tìm thấy hồ sơ sự cố.', 404);
+      }
+      return transaction(pool, 'BEGIN ISOLATION LEVEL READ COMMITTED', async client => {
+        const lockedIncident = await client.query('SELECT * FROM civicmerge.incidents WHERE id = $1 FOR UPDATE', [input.incidentId]);
+        if (!lockedIncident.rows[0]) throw new DomainError('INCIDENT_NOT_FOUND', 'Không tìm thấy hồ sơ sự cố.', 404);
+        const inc = lockedIncident.rows[0];
+        assertIncidentSafeForVolunteer({
+          type: inc.type as IncidentType,
+          severity: inc.severity as Severity,
+          status: inc.status as IncidentStatus,
+        });
+        const eventId = randomUUID();
+        const initialCount = input.organizerId ? 1 : 0;
+        let createdRow: QueryResultRow;
+        try {
+          const inserted = await client.query(
+            `INSERT INTO civicmerge.volunteer_events (
+               id, incident_id, title, description, scheduled_at, meeting_point,
+               max_participants, participant_count, status, organizer_id, organizer_name, before_image_url
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'recruiting', $9, $10, $11)
+             RETURNING *`,
+            [
+              eventId, input.incidentId, input.title, input.description, input.scheduledAt,
+              input.meetingPoint, input.maxParticipants, initialCount,
+              input.organizerId, input.organizerName, inc.cover_image_url,
+            ],
+          );
+          createdRow = inserted.rows[0];
+        } catch (error) {
+          const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+          if (code === '23505') {
+            throw new DomainError('VOLUNTEER_EVENT_EXISTS', 'Sự cố này đã có một Buổi Tình Nguyện Xanh đang diễn ra.', 409);
+          }
+          throw error;
+        }
+        if (input.organizerId) {
+          await client.query(
+            `INSERT INTO civicmerge.volunteer_participants (id, event_id, user_id, display_name, status, joined_at)
+             VALUES ($1, $2, $3, $4, 'joined', $5)`,
+            [randomUUID(), eventId, input.organizerId, input.organizerName, createdRow.created_at],
+          );
+        }
+        await client.query(
+          'UPDATE civicmerge.incidents SET updated_at = $2 WHERE id = $1',
+          [input.incidentId, createdRow.created_at],
+        );
+        await client.query(
+          `INSERT INTO civicmerge.incident_events (id, incident_id, event, note, actor, actor_id, at)
+           VALUES ($1, $2, 'volunteer_event_created', $3, $4, $5, $6)`,
+          [randomUUID(), input.incidentId, `Khởi tạo buổi tình nguyện: ${input.title}`, input.organizerName, input.organizerId, createdRow.created_at],
+        );
+        const detail = await readVolunteerDetailInClient(client, eventId);
+        if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        return detail;
+      });
+    },
+    async listVolunteerEvents(filter?: VolunteerEventListFilter) {
+      const parsed = filter ? VolunteerEventListFilterSchema.parse(filter) : undefined;
+      const clauses: string[] = [];
+      const params: unknown[] = [];
+      if (parsed?.status) { params.push(parsed.status); clauses.push(`status = $${params.length}`); }
+      if (parsed?.incidentId) { params.push(parsed.incidentId); clauses.push(`incident_id = $${params.length}`); }
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+      let pagination = '';
+      if (parsed?.limit !== undefined) { params.push(parsed.limit); pagination += ` LIMIT $${params.length}`; }
+      if (parsed?.offset !== undefined) { params.push(parsed.offset); pagination += ` OFFSET $${params.length}`; }
+      const result = await pool.query(
+        `SELECT * FROM civicmerge.volunteer_events ${where} ORDER BY created_at DESC, id DESC${pagination}`,
+        params,
+      );
+      return result.rows.map(volunteerEventRow);
+    },
+    async countVolunteerEvents(filter?: Omit<VolunteerEventListFilter, 'limit' | 'offset'>) {
+      const clauses: string[] = [];
+      const params: unknown[] = [];
+      if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
+      if (filter?.incidentId) { params.push(filter.incidentId); clauses.push(`incident_id = $${params.length}`); }
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+      const result = await pool.query(`SELECT count(*)::int AS total FROM civicmerge.volunteer_events ${where}`, params);
+      return Number(result.rows[0]?.total ?? 0);
+    },
+    async getVolunteerStats() {
+      const result = await pool.query(`SELECT
+        (SELECT count(*)::int FROM civicmerge.volunteer_events WHERE status = 'verified') AS verified_events,
+        (SELECT count(*)::int FROM civicmerge.volunteer_certificates) AS total_certificates`);
+      return {
+        verifiedEvents: Number(result.rows[0]?.verified_events ?? 0),
+        totalCertificates: Number(result.rows[0]?.total_certificates ?? 0),
+      };
+    },
+    async getVolunteerEvent(id: string) {
+      if (!VolunteerEventSchema.shape.id.safeParse(id).success) return null;
+      return transaction(pool, 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', client => readVolunteerDetailInClient(client, id));
+    },
+    async joinVolunteerEvent(eventId: string, input) {
+      if (!VolunteerEventSchema.shape.id.safeParse(eventId).success) {
+        throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+      }
+      return transaction(pool, 'BEGIN ISOLATION LEVEL READ COMMITTED', async client => {
+        const locked = await client.query('SELECT * FROM civicmerge.volunteer_events WHERE id = $1 FOR UPDATE', [eventId]);
+        if (!locked.rows[0]) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        const ev = locked.rows[0];
+        if (ev.status !== 'recruiting' && ev.status !== 'in_progress') {
+          throw new DomainError('VOLUNTEER_EVENT_CLOSED', 'Buổi tình nguyện này đã đóng đăng ký.', 409);
+        }
+        const existing = await client.query(
+          'SELECT * FROM civicmerge.volunteer_participants WHERE event_id = $1 AND user_id = $2 FOR UPDATE',
+          [eventId, input.userId],
+        );
+        if (existing.rows[0] && ['joined', 'checked_in', 'certified'].includes(String(existing.rows[0].status))) {
+          const detail = await readVolunteerDetailInClient(client, eventId);
+          if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+          return detail;
+        }
+        if (Number(ev.participant_count) >= Number(ev.max_participants)) {
+          throw new DomainError('VOLUNTEER_EVENT_FULL', 'Buổi tình nguyện đã đủ số lượng người tham gia.', 409);
+        }
+        if (existing.rows[0]) {
+          await client.query(
+            `UPDATE civicmerge.volunteer_participants
+             SET status = 'joined', display_name = $3, joined_at = clock_timestamp()
+             WHERE event_id = $1 AND user_id = $2`,
+            [eventId, input.userId, input.displayName],
+          );
+        } else {
+          await client.query(
+            `INSERT INTO civicmerge.volunteer_participants (id, event_id, user_id, display_name, status)
+             VALUES ($1, $2, $3, $4, 'joined')`,
+            [randomUUID(), eventId, input.userId, input.displayName],
+          );
+        }
+        await client.query(
+          'UPDATE civicmerge.volunteer_events SET participant_count = participant_count + 1, updated_at = clock_timestamp() WHERE id = $1',
+          [eventId],
+        );
+        const detail = await readVolunteerDetailInClient(client, eventId);
+        if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        return detail;
+      });
+    },
+    async leaveVolunteerEvent(eventId: string, userId: string) {
+      if (!VolunteerEventSchema.shape.id.safeParse(eventId).success) {
+        throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+      }
+      return transaction(pool, 'BEGIN ISOLATION LEVEL READ COMMITTED', async client => {
+        const locked = await client.query('SELECT * FROM civicmerge.volunteer_events WHERE id = $1 FOR UPDATE', [eventId]);
+        if (!locked.rows[0]) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        const ev = locked.rows[0];
+        if (ev.status === 'verified' || ev.status === 'pending_review') {
+          throw new DomainError('VOLUNTEER_EVENT_CLOSED', 'Không thể hủy tham gia khi buổi tình nguyện đang chờ duyệt hoặc đã hoàn tất.', 409);
+        }
+        const updatedParticipant = await client.query(
+          `UPDATE civicmerge.volunteer_participants
+           SET status = 'cancelled'
+           WHERE event_id = $1 AND user_id = $2 AND status IN ('joined', 'checked_in')
+           RETURNING id`,
+          [eventId, userId],
+        );
+        if (updatedParticipant.rows.length > 0) {
+          await client.query(
+            'UPDATE civicmerge.volunteer_events SET participant_count = GREATEST(0, participant_count - 1), updated_at = clock_timestamp() WHERE id = $1',
+            [eventId],
+          );
+        }
+        const detail = await readVolunteerDetailInClient(client, eventId);
+        if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        return detail;
+      });
+    },
+    async submitVolunteerAfterImage(eventId: string, input) {
+      if (!VolunteerEventSchema.shape.id.safeParse(eventId).success) {
+        throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+      }
+      const validUrl = ReportSchema.shape.imageUrl.parse(input.imageUrl);
+      return transaction(pool, 'BEGIN ISOLATION LEVEL READ COMMITTED', async client => {
+        const locked = await client.query('SELECT * FROM civicmerge.volunteer_events WHERE id = $1 FOR UPDATE', [eventId]);
+        if (!locked.rows[0]) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        const ev = locked.rows[0];
+        if (ev.status === 'verified' || ev.status === 'cancelled') {
+          throw new DomainError('VOLUNTEER_EVENT_CLOSED', 'Buổi tình nguyện đã kết thúc, không thể nộp ảnh Sau.', 409);
+        }
+        const updated = await client.query(
+          `UPDATE civicmerge.volunteer_events
+           SET after_image_url = $2, status = 'pending_review', review_note = NULL, updated_at = clock_timestamp()
+           WHERE id = $1 RETURNING updated_at`,
+          [eventId, validUrl],
+        );
+        await client.query(
+          'UPDATE civicmerge.incidents SET updated_at = $2 WHERE id = $1',
+          [ev.incident_id, updated.rows[0].updated_at],
+        );
+        await client.query(
+          `INSERT INTO civicmerge.incident_events (id, incident_id, event, note, actor, actor_id, at)
+           VALUES ($1, $2, 'volunteer_after_submitted', $3, $4, $5, $6)`,
+          [randomUUID(), ev.incident_id, `Đã nộp ảnh Sau hoàn thành cho buổi "${ev.title}"`, input.actor ?? null, input.actorId ?? null, updated.rows[0].updated_at],
+        );
+        const detail = await readVolunteerDetailInClient(client, eventId);
+        if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        return detail;
+      });
+    },
+    async reviewVolunteerEvent(eventId: string, input) {
+      if (!VolunteerEventSchema.shape.id.safeParse(eventId).success) {
+        throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+      }
+      return transaction(pool, 'BEGIN ISOLATION LEVEL READ COMMITTED', async client => {
+        const locked = await client.query('SELECT * FROM civicmerge.volunteer_events WHERE id = $1 FOR UPDATE', [eventId]);
+        if (!locked.rows[0]) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        const ev = locked.rows[0];
+        if (ev.status === 'verified' || ev.status === 'cancelled') {
+          throw new DomainError('VOLUNTEER_EVENT_ALREADY_REVIEWED', 'Buổi tình nguyện này đã được xử lý xong trước đó.', 409);
+        }
+        const reviewerName = input.actor?.trim() || 'Ban quản lý GreenMerge';
+        if (input.decision === 'reject') {
+          const rejectNote = input.note ?? 'Cần bổ sung ảnh Sau khi hoàn thành rõ nét hơn.';
+          await client.query(
+            `UPDATE civicmerge.volunteer_events
+             SET status = 'in_progress', review_note = $2, reviewed_by = $3, reviewed_at = clock_timestamp(), updated_at = clock_timestamp()
+             WHERE id = $1`,
+            [eventId, rejectNote, reviewerName],
+          );
+          const detail = await readVolunteerDetailInClient(client, eventId);
+          if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+          return { event: detail, certificates: [] };
+        }
+        if (!ev.after_image_url) {
+          throw new DomainError('AFTER_IMAGE_REQUIRED', 'Cần có ảnh Sau khi hoàn thành trước khi phê duyệt buổi tình nguyện.', 409);
+        }
+        const lockedIncident = await client.query('SELECT * FROM civicmerge.incidents WHERE id = $1 FOR UPDATE', [ev.incident_id]);
+        if (!lockedIncident.rows[0]) throw new DomainError('INCIDENT_NOT_FOUND', 'Không tìm thấy hồ sơ sự cố liên kết.', 404);
+        const fromStatus = lockedIncident.rows[0].status as IncidentStatus;
+        const updatedEv = await client.query(
+          `UPDATE civicmerge.volunteer_events
+           SET status = 'verified', review_note = $2, reviewed_by = $3, reviewed_at = clock_timestamp(), updated_at = clock_timestamp()
+           WHERE id = $1 RETURNING reviewed_at`,
+          [eventId, input.note ?? null, reviewerName],
+        );
+        const reviewedAt: Date = updatedEv.rows[0].reviewed_at;
+        const resolutionNote = input.note ?? `Đã xử lý bởi Buổi Tình Nguyện Xanh: ${ev.title}`;
+        await client.query(
+          `UPDATE civicmerge.incidents
+           SET status = 'resolved',
+               resolution_image_url = $2,
+               resolution_note = $3,
+               resolved_at = COALESCE(resolved_at, $4),
+               updated_at = $4
+           WHERE id = $1`,
+          [ev.incident_id, ev.after_image_url, resolutionNote, reviewedAt],
+        );
+        await client.query(
+          `INSERT INTO civicmerge.incident_events (id, incident_id, event, from_status, to_status, note, actor, actor_id, at)
+           VALUES ($1, $2, 'volunteer_verified', $3, 'resolved', $4, $5, $6, $7)`,
+          [randomUUID(), ev.incident_id, fromStatus, resolutionNote, reviewerName, input.actorId ?? null, reviewedAt],
+        );
+        const certificates: VolunteerCertificate[] = [];
+        if (input.issueCertificates !== false) {
+          const year = reviewedAt.getUTCFullYear();
+          const eligible = await client.query(
+            `SELECT * FROM civicmerge.volunteer_participants
+             WHERE event_id = $1 AND status IN ('joined', 'checked_in')
+             ORDER BY joined_at ASC, id ASC FOR UPDATE`,
+            [eventId],
+          );
+          for (const participant of eligible.rows) {
+            let insertedCert: QueryResultRow | undefined;
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+              const code = generateCertificateCode(year);
+              try {
+                const certRes = await client.query(
+                  `INSERT INTO civicmerge.volunteer_certificates (
+                     id, certificate_code, event_id, event_title, incident_id,
+                     user_id, recipient_name, completed_at, issued_by, issued_at
+                   )
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $8)
+                   ON CONFLICT (event_id, user_id) DO NOTHING
+                   RETURNING *`,
+                  [
+                    randomUUID(), code, eventId, ev.title, ev.incident_id,
+                    participant.user_id, participant.display_name, reviewedAt, reviewerName,
+                  ],
+                );
+                insertedCert = certRes.rows[0];
+                break;
+              } catch (error) {
+                const pgCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+                if (pgCode === '23505') continue;
+                throw error;
+              }
+            }
+            if (insertedCert) certificates.push(volunteerCertificateRow(insertedCert));
+          }
+          await client.query(
+            `UPDATE civicmerge.volunteer_participants
+             SET status = 'certified'
+             WHERE event_id = $1 AND status IN ('joined', 'checked_in')`,
+            [eventId],
+          );
+        }
+        const detail = await readVolunteerDetailInClient(client, eventId);
+        if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+        return { event: detail, certificates };
+      });
+    },
+    async listCertificatesByUser(userId: string) {
+      if (!ReportSchema.shape.id.safeParse(userId).success) return [];
+      const result = await pool.query(
+        'SELECT * FROM civicmerge.volunteer_certificates WHERE user_id = $1 ORDER BY issued_at DESC, id DESC',
+        [userId],
+      );
+      return result.rows.map(volunteerCertificateRow);
+    },
+    async findCertificateByCode(code: string) {
+      const normalized = code.trim().toUpperCase();
+      if (!normalized) return null;
+      const result = await pool.query(
+        'SELECT * FROM civicmerge.volunteer_certificates WHERE UPPER(certificate_code) = $1',
+        [normalized],
+      );
+      return result.rows[0] ? volunteerCertificateRow(result.rows[0]) : null;
+    },
+    async listPushTokensForVolunteerEvent(eventId: string) {
+      if (!VolunteerEventSchema.shape.id.safeParse(eventId).success) return [];
+      const result = await pool.query(
+        `SELECT DISTINCT pt.expo_push_token
+         FROM civicmerge.push_tokens pt
+         JOIN civicmerge.volunteer_participants vp ON vp.user_id = pt.user_id
+         WHERE vp.event_id = $1 AND vp.status IN ('joined', 'checked_in', 'certified')`,
+        [eventId],
+      );
+      return result.rows.map(row => String(row.expo_push_token));
     },
     async reset() { throw new DomainError('RESET_DISABLED', 'Không được reset dữ liệu PostgreSQL qua ứng dụng.', 403); },
   };

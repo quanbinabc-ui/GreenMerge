@@ -1,8 +1,11 @@
 import {
   AnalyzeResponseSchema, ApiErrorSchema, AuthSessionResponseSchema, ConfirmResponseSchema, HealthSchema,
-  IncidentDetailSchema, IncidentListResponseSchema, MockStateSchema, MyReportsResponseSchema, ReportSchema,
-  type BackendCapabilities, type ConfirmRequest, type IncidentListFilter, type Location,
-  type LoginRequest, type MockScenario, type SignupRequest,
+  IncidentDetailSchema, IncidentListResponseSchema, MockStateSchema, MyCertificatesResponseSchema,
+  MyReportsResponseSchema, PublicVolunteerCertificateSchema, ReportSchema, ReviewVolunteerEventResponseSchema,
+  VolunteerEventDetailSchema, VolunteerEventListResponseSchema,
+  type BackendCapabilities, type ConfirmRequest, type CreateVolunteerEventRequest, type IncidentListFilter,
+  type JoinVolunteerEventRequest, type Location, type LoginRequest, type MockScenario,
+  type ReviewVolunteerEventRequest, type SignupRequest, type VolunteerEventListFilter,
 } from '@civicmerge/contracts';
 import { File } from 'expo-file-system';
 import { fetch } from 'expo/fetch';
@@ -66,6 +69,16 @@ function listQuery(filter?: IncidentListFilter & { mine?: boolean }): string {
   const query = params.toString();
   return query ? `?${query}` : '';
 }
+function volunteerListQuery(filter?: VolunteerEventListFilter): string {
+  if (!filter) return '';
+  const params = new URLSearchParams();
+  if (filter.status) params.set('status', filter.status);
+  if (filter.incidentId) params.set('incidentId', filter.incidentId);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.offset !== undefined) params.set('offset', String(filter.offset));
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
 export const api = {
   health: async () => {
     capabilities = undefined;
@@ -95,6 +108,33 @@ export const api = {
   },
   scenario: (scenario: MockScenario) => request('/api/mock/scenario', MockStateSchema, json({ scenario })),
   reset: () => request('/api/mock/reset', MockStateSchema, { method: 'POST' }),
+  listVolunteerEvents: (filter?: VolunteerEventListFilter) =>
+    request(`/api/volunteer-events${volunteerListQuery(filter)}`, VolunteerEventListResponseSchema),
+  volunteerEventDetail: (id: string) =>
+    request(`/api/volunteer-events/${encodeURIComponent(id)}`, VolunteerEventDetailSchema),
+  createVolunteerEvent: (incidentId: string, body: CreateVolunteerEventRequest) =>
+    request(`/api/incidents/${encodeURIComponent(incidentId)}/volunteer-events`, VolunteerEventDetailSchema, json(body)),
+  joinVolunteerEvent: (eventId: string, body: JoinVolunteerEventRequest = {}) =>
+    request(`/api/volunteer-events/${encodeURIComponent(eventId)}/join`, VolunteerEventDetailSchema, json(body)),
+  leaveVolunteerEvent: (eventId: string) =>
+    request(`/api/volunteer-events/${encodeURIComponent(eventId)}/join`, VolunteerEventDetailSchema, { method: 'DELETE' }),
+  async submitVolunteerAfterImage(eventId: string, image: UploadImage) {
+    const form = new FormData();
+    form.append('image', new File(image.uri));
+    return request(`/api/volunteer-events/${encodeURIComponent(eventId)}/after-image`, VolunteerEventDetailSchema, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  reviewVolunteerEvent: (eventId: string, body: ReviewVolunteerEventRequest) =>
+    request(`/api/volunteer-events/${encodeURIComponent(eventId)}/review`, ReviewVolunteerEventResponseSchema, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  myCertificates: () => request('/api/me/certificates', MyCertificatesResponseSchema),
+  lookupCertificate: (code: string) =>
+    request(`/api/certificates/${encodeURIComponent(code.trim().toUpperCase())}`, PublicVolunteerCertificateSchema),
 };
 
 export async function tryRegisterPushToken(token: string | null | undefined, platform: 'ios' | 'android' | 'web'): Promise<boolean> {

@@ -51,6 +51,11 @@
           <strong id="kpi-reports">0</strong>
           <span id="kpi-merge-sub" class="kpi-sub">0% báo cáo trùng đã được hợp nhất</span>
         </div>
+        <div class="kpi-card kpi-green">
+          <span class="kpi-label">Tình nguyện Xanh</span>
+          <strong id="kpi-volunteer-verified">0 buổi</strong>
+          <span id="kpi-volunteer-certs" class="kpi-sub">0 chứng nhận đã cấp</span>
+        </div>
       </section>
 
       <section class="workspace-grid">
@@ -59,6 +64,7 @@
             <div class="view-tabs" role="tablist">
               <button id="tab-list" type="button" class="view-tab active" role="tab" aria-selected="true">Danh sách ưu tiên</button>
               <button id="tab-map" type="button" class="view-tab" role="tab" aria-selected="false">Bản đồ điểm nóng</button>
+              <button id="tab-volunteer" type="button" class="view-tab" role="tab" aria-selected="false">🌿 Duyệt Tình nguyện Xanh</button>
             </div>
             <form id="search-form" class="search-form">
               <input id="search-input" type="search" placeholder="Tìm mô tả, địa chỉ, tổ xử lý..." />
@@ -66,7 +72,7 @@
             </form>
           </div>
 
-          <div class="filter-bar">
+          <div id="incident-filter-bar" class="filter-bar">
             <select id="filter-type" aria-label="Lọc theo loại sự cố">
               <option value="">Tất cả loại sự cố</option>
               <option value="pothole">Ổ gà</option>
@@ -85,6 +91,17 @@
               <option value="medium">Trung bình</option>
               <option value="low">Thấp</option>
             </select>
+          </div>
+
+          <div id="volunteer-filter-bar" class="filter-bar hidden">
+            <select id="filter-volunteer-status" aria-label="Lọc trạng thái buổi tình nguyện">
+              <option value="">Tất cả buổi tình nguyện</option>
+              <option value="pending_review">Chờ duyệt ảnh Sau</option>
+              <option value="recruiting">Đang tuyển TNV</option>
+              <option value="in_progress">Đang thực hiện / Bổ sung</option>
+              <option value="verified">Đã duyệt &amp; Cấp chứng nhận</option>
+            </select>
+            <span id="volunteer-summary-badge" class="sub-cell">0 buổi hiển thị</span>
           </div>
 
           <div id="view-list" class="view-pane">
@@ -120,6 +137,23 @@
               <span class="sub-cell">Kích thước điểm tỷ lệ với số lượt phản ánh đã gom</span>
             </div>
             <div id="hotspot-canvas" class="hotspot-canvas"></div>
+          </div>
+
+          <div id="view-volunteer" class="view-pane hidden">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Trước / Sau</th>
+                    <th>Buổi Tình nguyện Xanh</th>
+                    <th>Trạng thái</th>
+                    <th>Tham gia</th>
+                    <th>Cập nhật</th>
+                  </tr>
+                </thead>
+                <tbody id="volunteer-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 

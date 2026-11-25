@@ -52,10 +52,14 @@ export function HomeScreen({
   onReport,
   onDetail,
   onResumePending,
+  onVolunteers,
+  onCertificates,
 }: {
   onReport(): void;
   onDetail(id: string): void;
   onResumePending(): void;
+  onVolunteers(): void;
+  onCertificates(): void;
 }) {
   const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -309,6 +313,14 @@ export function HomeScreen({
           </Pressable>
         </View>
         <Button title="+ Báo cáo sự cố mới" onPress={onReport} disabled={loading || !API_URL} />
+        <View style={styles.gridTwo}>
+          <View style={styles.flexOne}>
+            <Button title="🌿 Tình nguyện Xanh" secondary compact onPress={onVolunteers} disabled={!API_URL} />
+          </View>
+          <View style={styles.flexOne}>
+            <Button title="🏅 Chứng nhận" secondary compact onPress={onCertificates} disabled={!API_URL} />
+          </View>
+        </View>
         {!API_URL && (
           <Text style={styles.caption}>Chưa cấu hình máy chủ — bấm ⚙ Cài đặt để kết nối.</Text>
         )}

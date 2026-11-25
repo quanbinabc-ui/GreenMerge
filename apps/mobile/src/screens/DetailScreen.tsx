@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
-import type { HistoryEvent, IncidentDetail } from '@civicmerge/contracts';
+import { Linking, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  isIncidentSafeForVolunteer,
+  type HistoryEvent,
+  type IncidentDetail,
+  type VolunteerEvent,
+} from '@civicmerge/contracts';
 import { api, imageSourceUrl } from '../services/api';
 import { mapUrlForLocation } from '../services/pending-draft-format';
 import {
@@ -23,11 +28,15 @@ import {
   statusLabels,
   styles,
   TypeBadge,
+  VolunteerStatusBadge,
 } from '../ui';
 
 function historyTitle(event: HistoryEvent): string {
   if (event.event === 'created') return 'Khởi tạo hồ sơ sự cố mới';
   if (event.event === 'report_merged') return 'Hợp nhất thêm minh chứng từ cộng đồng';
+  if (event.event === 'volunteer_event_created') return '🌿 Khởi tạo Buổi Tình Nguyện Xanh';
+  if (event.event === 'volunteer_after_submitted') return '📸 Đã nộp ảnh Sau khi hoàn thành';
+  if (event.event === 'volunteer_verified') return '🏅 Đã duyệt Tình Nguyện Xanh & Đóng hồ sơ';
   if (event.event === 'status_changed') {
     const from = event.fromStatus ? statusLabels[event.fromStatus] : '';
     const to = event.toStatus ? statusLabels[event.toStatus] : '';
@@ -36,21 +45,45 @@ function historyTitle(event: HistoryEvent): string {
   return 'Cập nhật đơn vị xử lý';
 }
 
-export function DetailScreen({ id, onHome }: { id: string; onHome(): void }) {
+export function DetailScreen({
+  id,
+  onHome,
+  onVolunteerDetail,
+}: {
+  id: string;
+  onHome(): void;
+  onVolunteerDetail(eventId: string): void;
+}) {
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
+  const [linkedEvent, setLinkedEvent] = useState<VolunteerEvent | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [eventTitle, setEventTitle] = useState('');
+  const [meetingPoint, setMeetingPoint] = useState('');
+  const [maxParticipantsInput, setMaxParticipantsInput] = useState('10');
+  const [organizerName, setOrganizerName] = useState('');
+  const [eventDescription, setEventDescription] = useState('');
+  const [creatingEvent, setCreatingEvent] = useState(false);
+  const [volunteerError, setVolunteerError] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
-    api
-      .detail(id)
-      .then((value) => {
-        if (active) setDetail(value);
+    Promise.all([
+      api.detail(id),
+      api.listVolunteerEvents({ incidentId: id, limit: 5 }).catch(() => ({ events: [] as VolunteerEvent[] })),
+    ])
+      .then(([value, volunteerRes]) => {
+        if (!active) return;
+        setDetail(value);
+        const existing = volunteerRes.events.find(ev => ev.status !== 'cancelled') ?? null;
+        setLinkedEvent(existing);
+        setEventTitle(prev => prev || `Dọn dẹp xanh: ${value.description.slice(0, 60)}`);
+        setMeetingPoint(prev => prev || value.address || 'Điểm tập trung tại khu vực sự cố');
       })
-      .catch((error) => {
-        if (active) setError(messageOf(error));
+      .catch((err) => {
+        if (active) setError(messageOf(err));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -59,6 +92,35 @@ export function DetailScreen({ id, onHome }: { id: string; onHome(): void }) {
       active = false;
     };
   }, [id, retry]);
+
+  async function handleCreateVolunteerEvent() {
+    if (!detail) return;
+    const maxNum = Number(maxParticipantsInput.trim());
+    if (!Number.isInteger(maxNum) || maxNum < 2 || maxNum > 50) {
+      setVolunteerError('Số lượng sinh viên tối đa phải từ 2 đến 50 người.');
+      return;
+    }
+    setCreatingEvent(true);
+    setVolunteerError('');
+    try {
+      const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+      const created = await api.createVolunteerEvent(detail.id, {
+        title: eventTitle.trim(),
+        description: eventDescription.trim(),
+        scheduledAt,
+        meetingPoint: meetingPoint.trim(),
+        maxParticipants: maxNum,
+        ...(organizerName.trim() ? { organizerName: organizerName.trim() } : {}),
+      });
+      setLinkedEvent(created);
+      setShowCreateForm(false);
+      onVolunteerDetail(created.id);
+    } catch (err) {
+      setVolunteerError(messageOf(err));
+    } finally {
+      setCreatingEvent(false);
+    }
+  }
 
   return (
     <Page>
@@ -153,6 +215,112 @@ export function DetailScreen({ id, onHome }: { id: string; onHome(): void }) {
               </View>
             )}
           </Card>
+
+          {(isIncidentSafeForVolunteer(detail) || linkedEvent) && (
+            <Card style={s.volunteerCard}>
+              <View style={styles.rowBetween}>
+                <SectionTitle>🌿 Kết Nối Buổi Tình Nguyện Xanh</SectionTitle>
+                {linkedEvent ? (
+                  <VolunteerStatusBadge status={linkedEvent.status} />
+                ) : (
+                  <Badge tone="success" label="An toàn Tầng 2" />
+                )}
+              </View>
+              {linkedEvent ? (
+                <>
+                  <Text style={s.volunteerTitle}>{linkedEvent.title}</Text>
+                  <Text style={styles.caption}>
+                    📍 {linkedEvent.meetingPoint} · 👥 {linkedEvent.participantCount}/{linkedEvent.maxParticipants} TNV
+                  </Text>
+                  <Text style={styles.caption}>🕒 Dự kiến: {dateLabel(linkedEvent.scheduledAt)}</Text>
+                  <Button
+                    title="Mở Buổi Tình Nguyện để tham gia →"
+                    tone="success"
+                    onPress={() => onVolunteerDetail(linkedEvent.id)}
+                  />
+                </>
+              ) : (
+                <>
+                  <Body>
+                    Sự cố này đủ điều kiện an toàn để cộng đồng sinh viên cùng dọn dẹp, chụp ảnh Sau và nhận Giấy chứng nhận Tình nguyện Xanh.
+                  </Body>
+                  {!!volunteerError && <ErrorNotice message={volunteerError} />}
+                  {showCreateForm ? (
+                    <View style={s.volunteerForm}>
+                      <TextInput
+                        accessibilityLabel="Tiêu đề buổi tình nguyện"
+                        placeholder="Tiêu đề buổi tình nguyện"
+                        value={eventTitle}
+                        onChangeText={setEventTitle}
+                        editable={!creatingEvent}
+                        style={styles.input}
+                      />
+                      <TextInput
+                        accessibilityLabel="Điểm tập trung"
+                        placeholder="Điểm tập trung (ví dụ: Cổng B ký túc xá)"
+                        value={meetingPoint}
+                        onChangeText={setMeetingPoint}
+                        editable={!creatingEvent}
+                        style={styles.input}
+                      />
+                      <TextInput
+                        accessibilityLabel="Số tình nguyện viên tối đa"
+                        placeholder="Số người tối đa (2–50)"
+                        value={maxParticipantsInput}
+                        onChangeText={setMaxParticipantsInput}
+                        keyboardType="number-pad"
+                        editable={!creatingEvent}
+                        style={styles.input}
+                      />
+                      <TextInput
+                        accessibilityLabel="Tên trưởng nhóm"
+                        placeholder="Tên trưởng nhóm (tùy chọn)"
+                        value={organizerName}
+                        onChangeText={setOrganizerName}
+                        editable={!creatingEvent}
+                        style={styles.input}
+                      />
+                      <TextInput
+                        accessibilityLabel="Mô tả dụng cụ hoặc lưu ý"
+                        placeholder="Ghi chú dụng cụ: găng tay, bao rác... (tùy chọn)"
+                        value={eventDescription}
+                        onChangeText={setEventDescription}
+                        editable={!creatingEvent}
+                        multiline
+                        style={styles.input}
+                      />
+                      <View style={styles.gridTwo}>
+                        <View style={styles.flexOne}>
+                          <Button
+                            title="Hủy"
+                            secondary
+                            compact
+                            disabled={creatingEvent}
+                            onPress={() => setShowCreateForm(false)}
+                          />
+                        </View>
+                        <View style={styles.flexOne}>
+                          <Button
+                            title={creatingEvent ? 'Đang khởi tạo…' : 'Khởi tạo buổi'}
+                            tone="success"
+                            compact
+                            disabled={creatingEvent || eventTitle.trim().length < 3 || meetingPoint.trim().length < 2}
+                            onPress={() => void handleCreateVolunteerEvent()}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <Button
+                      title="🌿 Khởi tạo Buổi Tình Nguyện Xanh"
+                      tone="success"
+                      onPress={() => setShowCreateForm(true)}
+                    />
+                  )}
+                </>
+              )}
+            </Card>
+          )}
 
           <View style={styles.rowBetween}>
             <SectionTitle>Hình ảnh minh chứng ({detail.reports.length})</SectionTitle>
@@ -300,5 +468,18 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.successBorder,
     gap: 6,
+  },
+  volunteerCard: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.successBorder,
+    borderWidth: 1.5,
+  },
+  volunteerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  volunteerForm: {
+    gap: 10,
   },
 });

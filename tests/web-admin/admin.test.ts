@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import type { IncidentSummary } from '@civicmerge/contracts';
+import type { IncidentSummary, VolunteerEvent } from '@civicmerge/contracts';
 import { createAdminClient, normalizeAdminBaseUrl } from '../../apps/web-admin/src/api.js';
 import {
   allowedNextStatuses,
@@ -10,7 +10,9 @@ import {
   googleMapsUrl,
   projectHotspots,
   sortQueueByPriority,
+  sortVolunteerEventsForReview,
   statusStepIndex,
+  VOLUNTEER_STATUS_LABELS,
 } from '../../apps/web-admin/src/state.js';
 
 function makeIncident(overrides: Partial<IncidentSummary> = {}): IncidentSummary {
@@ -113,4 +115,43 @@ test('projectHotspots maps GPS coordinates cleanly and statusStepIndex maps life
     assert.ok(point.yPercent >= 10 && point.yPercent <= 90);
   }
   assert.ok(projected[0].radius > projected[1].radius);
+});
+
+test('sortVolunteerEventsForReview prioritizes pending_review events and admin client calls volunteer endpoints', async () => {
+  const baseEvent = (overrides: Partial<VolunteerEvent>): VolunteerEvent => ({
+    id: randomUUID(),
+    incidentId: randomUUID(),
+    title: 'Buổi dọn rác',
+    description: '',
+    scheduledAt: '2026-11-26T08:00:00.000Z',
+    meetingPoint: 'Cổng A',
+    maxParticipants: 10,
+    participantCount: 3,
+    status: 'recruiting',
+    organizerId: randomUUID(),
+    organizerName: 'SV A',
+    beforeImageUrl: 'http://api.test/uploads/before.png',
+    afterImageUrl: null,
+    reviewNote: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    createdAt: '2026-11-25T00:00:00.000Z',
+    updatedAt: '2026-11-25T00:00:00.000Z',
+    ...overrides,
+  });
+  const verified = baseEvent({ status: 'verified' });
+  const recruiting = baseEvent({ status: 'recruiting' });
+  const pendingReview = baseEvent({ status: 'pending_review', afterImageUrl: 'http://api.test/uploads/after.png' });
+  const sorted = sortVolunteerEventsForReview([verified, recruiting, pendingReview]);
+  assert.deepEqual(sorted.map(e => e.id), [pendingReview.id, recruiting.id, verified.id]);
+  assert.equal(VOLUNTEER_STATUS_LABELS.pending_review, 'Chờ duyệt ảnh Sau');
+
+  const calls: Array<{ url: string; method: string }> = [];
+  const client = createAdminClient({ baseUrl: 'http://api.test', operatorKey: 'op-key' }, async (input, init) => {
+    calls.push({ url: String(input), method: init?.method ?? 'GET' });
+    return Response.json({ events: [], total: 0, stats: { verifiedEvents: 1, totalCertificates: 3 } });
+  });
+  await client.listVolunteerEvents({ status: 'pending_review', limit: 20 });
+  assert.equal(calls[0].method, 'GET');
+  assert.match(calls[0].url, /\/api\/volunteer-events\?status=pending_review&limit=20$/);
 });

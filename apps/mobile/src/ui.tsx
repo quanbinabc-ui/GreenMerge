@@ -1,6 +1,6 @@
 import { useState, type PropsWithChildren } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import type { AIAnalysis, IncidentType } from '@civicmerge/contracts';
+import type { AIAnalysis, IncidentType, VolunteerEventStatus, VolunteerParticipantStatus } from '@civicmerge/contracts';
 
 export type Severity = AIAnalysis['severity'];
 
@@ -51,6 +51,21 @@ export const statusLabels = {
   resolved: 'Đã xử lý',
 };
 
+export const volunteerStatusLabels: Record<VolunteerEventStatus, string> = {
+  recruiting: 'Đang tuyển TNV',
+  in_progress: 'Đang thực hiện',
+  pending_review: 'Chờ duyệt ảnh Sau',
+  verified: 'Đã duyệt & Cấp CN',
+  cancelled: 'Đã hủy',
+};
+
+export const participantStatusLabels: Record<VolunteerParticipantStatus, string> = {
+  joined: 'Đã đăng ký',
+  checked_in: 'Đã điểm danh',
+  certified: 'Đã cấp chứng nhận',
+  cancelled: 'Đã hủy',
+};
+
 export const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : 'Đã có lỗi. Hãy thử lại.';
 
@@ -91,6 +106,17 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 export function StatusBadge({ status }: { status: keyof typeof statusLabels }) {
   const tone = status === 'resolved' ? 'success' : status === 'in_progress' ? 'warning' : 'primary';
   return <Badge tone={tone} label={statusLabels[status]} />;
+}
+
+export function VolunteerStatusBadge({ status }: { status: VolunteerEventStatus }) {
+  const tone = status === 'verified'
+    ? 'success'
+    : status === 'pending_review' || status === 'in_progress'
+      ? 'warning'
+      : status === 'cancelled'
+        ? 'danger'
+        : 'primary';
+  return <Badge tone={tone} label={volunteerStatusLabels[status]} />;
 }
 
 export function StatusStepper({ status }: { status: keyof typeof statusLabels }) {

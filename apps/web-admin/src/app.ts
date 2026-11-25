@@ -1,4 +1,14 @@
-import type { IncidentDetail, IncidentStatus, IncidentSummary, IncidentType, Severity } from '@civicmerge/contracts';
+import type {
+  IncidentDetail,
+  IncidentStatus,
+  IncidentSummary,
+  IncidentType,
+  Severity,
+  VolunteerEvent,
+  VolunteerEventDetail,
+  VolunteerEventStatus,
+  VolunteerStats,
+} from '@civicmerge/contracts';
 import { createAdminClient, type AdminConnection } from './api.js';
 import {
   allowedNextStatuses,
@@ -6,12 +16,15 @@ import {
   escapeHtml,
   formatDateTime,
   googleMapsUrl,
+  PARTICIPANT_STATUS_LABELS,
   projectHotspots,
   SEVERITY_LABELS,
   sortQueueByPriority,
+  sortVolunteerEventsForReview,
   STATUS_LABELS,
   statusStepIndex,
   TYPE_LABELS,
+  VOLUNTEER_STATUS_LABELS,
 } from './state.js';
 
 const STORAGE_KEY = 'civicmerge_admin_session_v2';
@@ -27,7 +40,13 @@ interface UiState {
   offset: number;
   selectedId: string | null;
   detail: IncidentDetail | null;
-  activeView: 'list' | 'map';
+  volunteerEvents: VolunteerEvent[];
+  volunteerTotal: number;
+  volunteerStats: VolunteerStats;
+  volunteerStatusFilter: VolunteerEventStatus | '';
+  selectedVolunteerId: string | null;
+  volunteerDetail: VolunteerEventDetail | null;
+  activeView: 'list' | 'map' | 'volunteer';
   activeDetailTab: 'actions' | 'evidence' | 'history';
   authInputMode: 'email' | 'key';
   typeFilter: IncidentType | '';
@@ -87,6 +106,12 @@ const state: UiState = {
   offset: 0,
   selectedId: null,
   detail: null,
+  volunteerEvents: [],
+  volunteerTotal: 0,
+  volunteerStats: { verifiedEvents: 0, totalCertificates: 0 },
+  volunteerStatusFilter: '',
+  selectedVolunteerId: null,
+  volunteerDetail: null,
   activeView: 'list',
   activeDetailTab: 'actions',
   authInputMode: 'email',
@@ -130,6 +155,8 @@ function renderKpis() {
   byId('kpi-resolved').textContent = String(kpis.resolvedCount);
   byId('kpi-reports').textContent = `${kpis.totalReports} ảnh`;
   byId('kpi-merge-sub').textContent = `${kpis.duplicateReductionRate}% báo cáo trùng đã được hợp nhất`;
+  byId('kpi-volunteer-verified').textContent = `${state.volunteerStats.verifiedEvents} buổi`;
+  byId('kpi-volunteer-certs').textContent = `${state.volunteerStats.totalCertificates} chứng nhận đã cấp`;
 
   const pill = byId('health-status');
   pill.className = `health-pill ${state.connected ? 'online' : 'offline'}`;
@@ -146,15 +173,68 @@ function renderKpis() {
 }
 
 function renderViews() {
+  const isList = state.activeView === 'list';
   const isMap = state.activeView === 'map';
-  byId('view-list').classList.toggle('hidden', isMap);
+  const isVolunteer = state.activeView === 'volunteer';
+  byId('view-list').classList.toggle('hidden', !isList);
   byId('view-map').classList.toggle('hidden', !isMap);
-  byId('tab-list').classList.toggle('active', !isMap);
+  byId('view-volunteer').classList.toggle('hidden', !isVolunteer);
+  byId('incident-filter-bar').classList.toggle('hidden', isVolunteer);
+  byId('volunteer-filter-bar').classList.toggle('hidden', !isVolunteer);
+  byId('search-form').classList.toggle('hidden', isVolunteer);
+  byId('tab-list').classList.toggle('active', isList);
   byId('tab-map').classList.toggle('active', isMap);
-  byId('tab-list').setAttribute('aria-selected', String(!isMap));
+  byId('tab-volunteer').classList.toggle('active', isVolunteer);
+  byId('tab-list').setAttribute('aria-selected', String(isList));
   byId('tab-map').setAttribute('aria-selected', String(isMap));
+  byId('tab-volunteer').setAttribute('aria-selected', String(isVolunteer));
   renderQueue();
   renderHotspotMap();
+  renderVolunteerQueue();
+}
+
+function renderVolunteerQueue() {
+  const tbody = byId<HTMLTableSectionElement>('volunteer-body');
+  const sorted = sortVolunteerEventsForReview(state.volunteerEvents);
+  byId('volunteer-summary-badge').textContent = `${sorted.length} / ${state.volunteerTotal} buổi tình nguyện`;
+  if (sorted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">Chưa có Buổi Tình Nguyện Xanh nào phù hợp bộ lọc.</td></tr>';
+    return;
+  }
+  const client = getClient();
+  tbody.innerHTML = sorted.map((ev) => {
+    const selected = ev.id === state.selectedVolunteerId ? 'selected' : '';
+    const beforeThumb = client.imageDisplayUrl(ev.beforeImageUrl);
+    const afterThumb = ev.afterImageUrl ? client.imageDisplayUrl(ev.afterImageUrl) : null;
+    return `
+      <tr class="queue-row ${selected}" data-vid="${escapeHtml(ev.id)}">
+        <td>
+          <div class="thumb-pair">
+            <img class="row-thumb" src="${escapeHtml(beforeThumb)}" alt="Ảnh Trước" />
+            ${afterThumb
+              ? `<img class="row-thumb" src="${escapeHtml(afterThumb)}" alt="Ảnh Sau" />`
+              : '<span class="thumb-placeholder">Chưa có<br/>ảnh Sau</span>'}
+          </div>
+        </td>
+        <td>
+          <div class="desc-cell">${escapeHtml(ev.title)}</div>
+          <div class="sub-cell">📍 ${escapeHtml(ev.meetingPoint)} · Trưởng nhóm: ${escapeHtml(ev.organizerName)}</div>
+          <div class="sub-cell">Lịch: ${escapeHtml(formatDateTime(ev.scheduledAt))}</div>
+        </td>
+        <td>
+          <span class="badge vstatus-${ev.status}">${escapeHtml(VOLUNTEER_STATUS_LABELS[ev.status])}</span>
+        </td>
+        <td class="num-cell"><span class="count-pill">${ev.participantCount}/${ev.maxParticipants} TNV</span></td>
+        <td class="sub-cell">${escapeHtml(formatDateTime(ev.updatedAt))}</td>
+      </tr>
+    `;
+  }).join('');
+  tbody.querySelectorAll<HTMLTableRowElement>('tr[data-vid]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.vid;
+      if (id) void loadVolunteerDetail(id);
+    });
+  });
 }
 
 function renderQueue() {
@@ -231,7 +311,136 @@ function renderHotspotMap() {
   });
 }
 
+function renderVolunteerDetail() {
+  const panel = byId<HTMLDivElement>('detail-panel');
+  const detail = state.volunteerDetail;
+  if (!detail) {
+    panel.innerHTML = '<div class="empty-detail">Chọn một Buổi Tình Nguyện Xanh bên trái để đối chiếu ảnh Trước/Sau, kiểm tra danh sách sinh viên và phê duyệt cấp Giấy chứng nhận.</div>';
+    return;
+  }
+  const client = getClient();
+  const beforeUrl = client.imageDisplayUrl(detail.beforeImageUrl);
+  const afterUrl = detail.afterImageUrl ? client.imageDisplayUrl(detail.afterImageUrl) : null;
+  const activeParticipants = detail.participants.filter(p => p.status !== 'cancelled');
+  const canReview = detail.status !== 'verified' && detail.status !== 'cancelled';
+
+  panel.innerHTML = `
+    <div class="detail-header">
+      <div>
+        <h2>🌿 ${escapeHtml(detail.title)}</h2>
+        <div class="badge-stack">
+          <span class="badge vstatus-${detail.status}">${escapeHtml(VOLUNTEER_STATUS_LABELS[detail.status])}</span>
+          <span class="badge type-${detail.incidentSummary.type}">${escapeHtml(TYPE_LABELS[detail.incidentSummary.type])}</span>
+          <span class="badge sev-${detail.incidentSummary.severity}">Mức độ: ${escapeHtml(SEVERITY_LABELS[detail.incidentSummary.severity])}</span>
+        </div>
+      </div>
+      <span class="count-pill">${detail.participantCount}/${detail.maxParticipants} TNV</span>
+    </div>
+
+    ${detail.description ? `<p class="detail-desc">${escapeHtml(detail.description)}</p>` : ''}
+
+    <div class="meta-grid">
+      <div><strong>Trưởng nhóm:</strong> ${escapeHtml(detail.organizerName)}</div>
+      <div><strong>Điểm tập trung:</strong> ${escapeHtml(detail.meetingPoint)}</div>
+      <div><strong>Thời gian dự kiến:</strong> ${escapeHtml(formatDateTime(detail.scheduledAt))}</div>
+      <div><strong>Sự cố liên kết:</strong> #${escapeHtml(detail.incidentSummary.id.slice(0, 8).toUpperCase())} — ${escapeHtml(detail.incidentSummary.description)} (${escapeHtml(STATUS_LABELS[detail.incidentSummary.status])})</div>
+      ${detail.reviewedBy ? `<div><strong>Người đánh giá:</strong> ${escapeHtml(detail.reviewedBy)}${detail.reviewedAt ? ` · ${escapeHtml(formatDateTime(detail.reviewedAt))}` : ''}</div>` : ''}
+      ${detail.reviewNote ? `<div><strong>Nhận xét gần nhất:</strong> ${escapeHtml(detail.reviewNote)}</div>` : ''}
+    </div>
+
+    <div class="before-after-grid">
+      <figure class="ba-card">
+        <img class="evidence-img zoomable" src="${escapeHtml(beforeUrl)}" alt="Ảnh Trước — Sự cố gốc" />
+        <figcaption>
+          <span>📷 Ảnh TRƯỚC (Sự cố gốc)</span>
+          <span class="sub-cell">Phóng to</span>
+        </figcaption>
+      </figure>
+      <figure class="ba-card">
+        ${afterUrl
+          ? `<img class="evidence-img zoomable" src="${escapeHtml(afterUrl)}" alt="Ảnh Sau — Tình nguyện viên nộp" />`
+          : '<div class="ba-empty">Chưa có ảnh Sau khi hoàn thành do nhóm tình nguyện viên nộp.</div>'}
+        <figcaption>
+          <span>✨ Ảnh SAU (TNV nộp)</span>
+          <span class="sub-cell">${afterUrl ? 'Phóng to' : 'Chờ nộp'}</span>
+        </figcaption>
+      </figure>
+    </div>
+
+    <div class="action-card">
+      <h3>Danh sách sinh viên tham gia (${activeParticipants.length})</h3>
+      ${activeParticipants.length === 0
+        ? '<p class="sub-cell">Chưa có sinh viên nào đăng ký tham gia.</p>'
+        : `
+          <ul class="participant-list">
+            ${activeParticipants.map(p => `
+              <li class="participant-item">
+                <div>
+                  <strong>${escapeHtml(p.displayName)}</strong>
+                  <div class="sub-cell">Tham gia lúc ${escapeHtml(formatDateTime(p.joinedAt))}</div>
+                </div>
+                <div class="badge-stack">
+                  <span class="badge ${p.status === 'certified' ? 'status-resolved' : 'status-open'}">${escapeHtml(PARTICIPANT_STATUS_LABELS[p.status])}</span>
+                  ${p.certificateCode ? `<span class="cert-code">${escapeHtml(p.certificateCode)}</span>` : ''}
+                </div>
+              </li>
+            `).join('')}
+          </ul>
+        `}
+    </div>
+
+    <div class="action-card">
+      <h3>Đánh giá &amp; Cấp Giấy chứng nhận Tình nguyện Xanh</h3>
+      ${canReview ? `
+        <form id="volunteer-review-form" class="stack-form">
+          <input id="vreview-actor" type="text" value="${escapeHtml(state.connection.userLabel ?? '')}" placeholder="Cán bộ duyệt (ví dụ: Ban quản lý GreenMerge)" maxlength="120" />
+          <textarea id="vreview-note" rows="2" placeholder="Nhận xét chất lượng dọn dẹp hoặc yêu cầu chụp lại ảnh rõ nét..." maxlength="500"></textarea>
+          <div class="review-actions">
+            <button id="btn-volunteer-approve" type="button" class="btn success" ${!afterUrl ? 'disabled title="Cần có ảnh Sau trước khi phê duyệt"' : ''}>✓ Phê duyệt, Đóng hồ sơ &amp; Cấp chứng nhận</button>
+            <button id="btn-volunteer-reject" type="button" class="btn danger-outline">✕ Yêu cầu bổ sung</button>
+          </div>
+          ${!afterUrl ? '<p class="sub-cell">Nút Phê duyệt sẽ bật khi tình nguyện viên nộp ảnh Sau khi hoàn thành.</p>' : ''}
+        </form>
+      ` : `
+        <div class="resolved-card">
+          <strong>${detail.status === 'verified' ? '✓ Buổi Tình nguyện Xanh đã được phê duyệt, sự cố đã đóng và chứng nhận đã phát hành.' : 'Buổi tình nguyện đã bị hủy.'}</strong>
+        </div>
+      `}
+    </div>
+  `;
+
+  panel.querySelectorAll<HTMLImageElement>('.zoomable').forEach((img) => {
+    img.addEventListener('click', () => openLightbox(img.src, img.alt));
+  });
+
+  const approveBtn = document.getElementById('btn-volunteer-approve') as HTMLButtonElement | null;
+  const rejectBtn = document.getElementById('btn-volunteer-reject') as HTMLButtonElement | null;
+  const submitReview = (decision: 'approve' | 'reject') => {
+    const actor = (document.getElementById('vreview-actor') as HTMLInputElement | null)?.value.trim() ?? '';
+    const note = (document.getElementById('vreview-note') as HTMLTextAreaElement | null)?.value.trim() ?? '';
+    void runAction(async () => {
+      const response = await getClient().reviewVolunteerEvent(detail.id, {
+        decision,
+        ...(actor ? { actor } : {}),
+        ...(note ? { note } : {}),
+        issueCertificates: true,
+      });
+      state.volunteerDetail = response.event;
+      state.notice = decision === 'approve'
+        ? `Đã phê duyệt buổi "${detail.title}", đóng hồ sơ sự cố và cấp ${response.certificatesIssued} Giấy chứng nhận Tình nguyện Xanh.`
+        : `Đã gửi yêu cầu bổ sung cho buổi "${detail.title}".`;
+      await Promise.all([loadQueue(), loadVolunteerEvents()]);
+    });
+  };
+  approveBtn?.addEventListener('click', () => submitReview('approve'));
+  rejectBtn?.addEventListener('click', () => submitReview('reject'));
+}
+
 function renderDetail() {
+  if (state.activeView === 'volunteer') {
+    renderVolunteerDetail();
+    return;
+  }
   const panel = byId<HTMLDivElement>('detail-panel');
   const detail = state.detail;
   if (!detail) {
@@ -472,6 +681,25 @@ async function loadQueue() {
   state.total = result.total ?? result.incidents.length;
 }
 
+async function loadVolunteerEvents() {
+  const client = getClient();
+  const result = await client.listVolunteerEvents({
+    ...(state.volunteerStatusFilter ? { status: state.volunteerStatusFilter } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  state.volunteerEvents = result.events;
+  state.volunteerTotal = result.total ?? result.events.length;
+  if (result.stats) state.volunteerStats = result.stats;
+}
+
+async function loadVolunteerDetail(id: string) {
+  state.selectedVolunteerId = id;
+  await runAction(async () => {
+    state.volunteerDetail = await getClient().volunteerEventDetail(id);
+  });
+}
+
 async function loadDetail(id: string) {
   state.selectedId = id;
   await runAction(async () => {
@@ -488,9 +716,12 @@ async function connectAndRefresh() {
       ? `${health.capabilities.persistence}/${health.capabilities.storage} · AI:${health.capabilities.vision}`
       : health.mode;
     state.healthText = `Trực tuyến (${health.mode}) · ${caps}`;
-    await loadQueue();
+    await Promise.all([loadQueue(), loadVolunteerEvents()]);
     if (state.selectedId) {
       state.detail = await client.detail(state.selectedId);
+    }
+    if (state.selectedVolunteerId) {
+      state.volunteerDetail = await client.volunteerEventDetail(state.selectedVolunteerId);
     }
     setConnectModalOpen(false);
   });
@@ -558,6 +789,8 @@ function init() {
       state.offset = 0;
       state.selectedId = null;
       state.detail = null;
+      state.selectedVolunteerId = null;
+      state.volunteerDetail = null;
       const client = getClient();
       const health = await client.health();
       state.connected = true;
@@ -565,14 +798,24 @@ function init() {
         ? `${health.capabilities.persistence}/${health.capabilities.storage} · AI:${health.capabilities.vision}`
         : health.mode;
       state.healthText = `Trực tuyến (${health.mode}) · ${caps}`;
-      await loadQueue();
+      await Promise.all([loadQueue(), loadVolunteerEvents()]);
       state.notice = 'Đã kết nối máy chủ thành công.';
       setConnectModalOpen(false);
     });
   });
 
-  byId<HTMLButtonElement>('tab-list').addEventListener('click', () => { state.activeView = 'list'; renderViews(); });
-  byId<HTMLButtonElement>('tab-map').addEventListener('click', () => { state.activeView = 'map'; renderViews(); });
+  byId<HTMLButtonElement>('tab-list').addEventListener('click', () => { state.activeView = 'list'; renderViews(); renderDetail(); });
+  byId<HTMLButtonElement>('tab-map').addEventListener('click', () => { state.activeView = 'map'; renderViews(); renderDetail(); });
+  byId<HTMLButtonElement>('tab-volunteer').addEventListener('click', () => {
+    state.activeView = 'volunteer';
+    renderViews();
+    renderDetail();
+    void runAction(loadVolunteerEvents);
+  });
+  byId<HTMLSelectElement>('filter-volunteer-status').addEventListener('change', (event) => {
+    state.volunteerStatusFilter = (event.target as HTMLSelectElement).value as VolunteerEventStatus | '';
+    void runAction(loadVolunteerEvents);
+  });
 
   byId<HTMLSelectElement>('filter-type').addEventListener('change', (event) => {
     state.typeFilter = (event.target as HTMLSelectElement).value as IncidentType | '';

@@ -69,12 +69,13 @@ test('PostgreSQL migrations, persistence, atomic confirmation and concurrency', 
       '202611240000_incident_query_indexes.sql',
       '202611240001_incident_lifecycle.sql',
       '202611240002_auth_and_production.sql',
+      '202611250000_volunteer_actions.sql',
     ]);
     assert.deepEqual(await migrateDatabase(pool), []);
     const tables = await pool.query(`SELECT c.relname, c.relrowsecurity FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'civicmerge' AND c.relkind = 'r'`);
-    assert.equal(tables.rows.length, 10);
+    assert.equal(tables.rows.length, 13);
     assert.ok(tables.rows.every(row => row.relrowsecurity));
     assert.deepEqual(await counts(), { incidents: 0, reports: 0, history: 0, confirmations: 0 });
   });

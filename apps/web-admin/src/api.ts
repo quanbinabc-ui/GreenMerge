@@ -5,7 +5,12 @@ import type {
   IncidentSummary,
   LoginRequest,
   ReassignTeamRequest,
+  ReviewVolunteerEventRequest,
+  ReviewVolunteerEventResponse,
   UpdateIncidentStatusRequest,
+  VolunteerEventDetail,
+  VolunteerEventListFilter,
+  VolunteerEventListResponse,
 } from '@civicmerge/contracts';
 
 export interface AdminConnection {
@@ -119,6 +124,23 @@ export function createAdminClient(connection: AdminConnection, fetchImpl: typeof
         body: form,
       });
     },
+    listVolunteerEvents(filter: VolunteerEventListFilter = {}) {
+      const params = new URLSearchParams();
+      if (filter.status) params.set('status', filter.status);
+      if (filter.incidentId) params.set('incidentId', filter.incidentId);
+      if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+      if (filter.offset !== undefined) params.set('offset', String(filter.offset));
+      const query = params.toString();
+      return request<VolunteerEventListResponse>(`/api/volunteer-events${query ? `?${query}` : ''}`);
+    },
+    volunteerEventDetail: (id: string) =>
+      request<VolunteerEventDetail>(`/api/volunteer-events/${encodeURIComponent(id)}`),
+    reviewVolunteerEvent: (id: string, body: ReviewVolunteerEventRequest) =>
+      request<ReviewVolunteerEventResponse>(`/api/volunteer-events/${encodeURIComponent(id)}/review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
     imageDisplayUrl(rawUrl: string): string {
       if (!connection.bearerToken?.trim()) return rawUrl;
       try {

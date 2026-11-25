@@ -3,13 +3,17 @@ import express, { type ErrorRequestHandler } from 'express';
 import multer from 'multer';
 import {
   AIAnalysisSchema, AnalyzeResponseSchema, AuthSessionResponseSchema, ConfirmRequestSchema, ConfirmResponseSchema,
-  DomainError, IncidentDetailSchema, IncidentListFilterSchema, IncidentListResponseSchema,
-  LocationSchema, LoginRequestSchema, MockStateSchema, MyReportsResponseSchema, ReassignTeamRequestSchema,
-  RegisterPushTokenRequestSchema, ReportSchema, SignupRequestSchema, UpdateIncidentStatusRequestSchema,
+  CreateVolunteerEventRequestSchema, DomainError, IncidentDetailSchema, IncidentListFilterSchema,
+  IncidentListResponseSchema, JoinVolunteerEventRequestSchema, LocationSchema, LoginRequestSchema,
+  MockStateSchema, MyCertificatesResponseSchema, MyReportsResponseSchema, PublicVolunteerCertificateSchema,
+  ReassignTeamRequestSchema, RegisterPushTokenRequestSchema, ReportSchema, ReviewVolunteerEventRequestSchema,
+  ReviewVolunteerEventResponseSchema, SignupRequestSchema, UpdateIncidentStatusRequestSchema,
+  VolunteerEventDetailSchema, VolunteerEventListFilterSchema, VolunteerEventListResponseSchema,
   type AnalyzeResponse, type AuthClient, type AuthUser, type AuthVerifier, type BackendCapabilities,
   type DuplicateMatcher, type ImageStorage, type IncidentListFilter, type IncidentRepository,
   type IncidentRouter, type IncidentStatus, type IncidentType, type Location, type MockScenario,
-  type PushNotifier, type ReverseGeocoder, type VisionAnalyzer,
+  type PushNotifier, type ReverseGeocoder, type VisionAnalyzer, type VolunteerEvent,
+  type VolunteerEventDetail, type VolunteerEventListFilter,
 } from '@civicmerge/contracts';
 import { MAX_IMAGE_BYTES, validateImageInput } from './storage/image.js';
 import { publicImageUrl } from './storage/reference.js';
@@ -132,6 +136,50 @@ function assertReportOwnership(report: { reporterId?: string | null }, user: Aut
     throw new DomainError('FORBIDDEN', 'Bạn không có quyền truy cập hoặc xác nhận báo cáo của người dùng khác.', 403);
   }
 }
+const DEMO_VOLUNTEER_USER_ID = '00000000-0000-4000-8000-000000000101';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveVolunteerActor(
+  req: express.Request,
+  deps: Pick<AppDependencies, 'authVerifier' | 'mockMode'>,
+): Promise<{ id: string; displayName: string }> {
+  const user = await requireAuthenticatedUser(req, deps.authVerifier);
+  if (user) {
+    return {
+      id: user.id,
+      displayName: user.displayName?.trim() || 'Tình nguyện viên',
+    };
+  }
+  const demoHeader = req.header('X-Demo-User-Id')?.trim();
+  const userId = demoHeader && UUID_PATTERN.test(demoHeader) ? demoHeader.toLowerCase() : DEMO_VOLUNTEER_USER_ID;
+  const demoName = req.header('X-Demo-User-Name')?.trim();
+  return {
+    id: userId,
+    displayName: demoName && demoName.length <= 120 ? demoName : 'Sinh viên Tình nguyện (Demo)',
+  };
+}
+function parseVolunteerListFilter(query: Record<string, unknown>): VolunteerEventListFilter {
+  const allowed = new Set(['status', 'incidentId', 'limit', 'offset']);
+  for (const key of Object.keys(query)) {
+    if (!allowed.has(key)) throw new DomainError('VALIDATION_ERROR', 'Tham số lọc buổi tình nguyện không được hỗ trợ.', 400);
+  }
+  const readString = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined);
+  const parseIntParam = (value: unknown, name: string) => {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) {
+      throw new DomainError('VALIDATION_ERROR', `Tham số ${name} phải là số nguyên không âm.`, 400);
+    }
+    return Number(value.trim());
+  };
+  const candidate = {
+    ...(readString(query.status) !== undefined ? { status: readString(query.status) } : {}),
+    ...(readString(query.incidentId) !== undefined ? { incidentId: readString(query.incidentId) } : {}),
+    ...(query.limit !== undefined ? { limit: parseIntParam(query.limit, 'limit') } : {}),
+    ...(query.offset !== undefined ? { offset: parseIntParam(query.offset, 'offset') } : {}),
+  };
+  const parsed = VolunteerEventListFilterSchema.safeParse(candidate);
+  if (!parsed.success) throw new DomainError('VALIDATION_ERROR', 'Tham số lọc buổi tình nguyện không hợp lệ.', 400);
+  return parsed.data;
+}
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const IDEMPOTENCY_TTL_MS = 15 * 60 * 1000;
 const IDEMPOTENCY_MAX_ENTRIES = 500;
@@ -213,7 +261,7 @@ export function createApp(deps: AppDependencies) {
       res.set({
         'Access-Control-Allow-Origin': origin,
         Vary: 'Origin',
-        'Access-Control-Allow-Methods': 'GET,POST,PATCH,OPTIONS',
+        'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Operator-Key, Idempotency-Key, X-Request-Id',
         'Access-Control-Expose-Headers': 'X-Request-Id, Retry-After, ETag',
       });
@@ -280,6 +328,19 @@ export function createApp(deps: AppDependencies) {
     ...incident,
     coverImageUrl: imageUrl(incident.coverImageUrl),
     ...(incident.resolutionImageUrl ? { resolutionImageUrl: imageUrl(incident.resolutionImageUrl) } : {}),
+  });
+  const mapVolunteerEvent = (event: VolunteerEvent): VolunteerEvent => ({
+    ...event,
+    beforeImageUrl: imageUrl(event.beforeImageUrl),
+    afterImageUrl: event.afterImageUrl ? imageUrl(event.afterImageUrl) : null,
+  });
+  const mapVolunteerEventDetail = (detail: VolunteerEventDetail): VolunteerEventDetail => ({
+    ...mapVolunteerEvent(detail),
+    participants: detail.participants,
+    incidentSummary: {
+      ...detail.incidentSummary,
+      coverImageUrl: imageUrl(detail.incidentSummary.coverImageUrl),
+    },
   });
   const summaries = async (filter?: IncidentListFilter) => (await dependency('DATABASE_UNAVAILABLE', () => deps.repository.list(filter)))
     .map(mapSummary);
@@ -569,6 +630,170 @@ export function createApp(deps: AppDependencies) {
       try { await deps.storage.remove(savedImage); } catch { /* retain for operator review */ }
       throw error;
     }
+  });
+
+  // Tier-2 Community Volunteer Actions ("Buổi Tình Nguyện Xanh")
+  app.get('/api/volunteer-events', async (req, res) => {
+    if (!deps.repository.listVolunteerEvents) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ Buổi Tình Nguyện Xanh.', 501);
+    }
+    const filter = parseVolunteerListFilter(req.query as Record<string, unknown>);
+    const hasFilter = Object.keys(filter).length > 0;
+    const events = (await dependency('DATABASE_UNAVAILABLE', () => deps.repository.listVolunteerEvents!(hasFilter ? filter : undefined)))
+      .map(mapVolunteerEvent);
+    const countFilter = {
+      ...(filter.status ? { status: filter.status } : {}),
+      ...(filter.incidentId ? { incidentId: filter.incidentId } : {}),
+    };
+    const total = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.countVolunteerEvents
+      ? deps.repository.countVolunteerEvents(countFilter)
+      : Promise.resolve(events.length));
+    const stats = deps.repository.getVolunteerStats
+      ? await dependency('DATABASE_UNAVAILABLE', () => deps.repository.getVolunteerStats!())
+      : undefined;
+    res.json(VolunteerEventListResponseSchema.parse({
+      events,
+      total,
+      ...(stats ? { stats } : {}),
+    }));
+  });
+
+  app.get('/api/volunteer-events/:id', async (req, res) => {
+    if (!deps.repository.getVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ Buổi Tình Nguyện Xanh.', 501);
+    }
+    const detail = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.getVolunteerEvent!(req.params.id));
+    if (!detail) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+    res.json(VolunteerEventDetailSchema.parse(mapVolunteerEventDetail(detail)));
+  });
+
+  app.post('/api/incidents/:id/volunteer-events', async (req, res) => {
+    if (!deps.repository.createVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ Buổi Tình Nguyện Xanh.', 501);
+    }
+    const actor = await resolveVolunteerActor(req, deps);
+    const parsed = CreateVolunteerEventRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new DomainError('VALIDATION_ERROR', 'Thông tin khởi tạo buổi tình nguyện không hợp lệ.', 400);
+    }
+    const created = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.createVolunteerEvent!({
+      incidentId: req.params.id,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      scheduledAt: parsed.data.scheduledAt,
+      meetingPoint: parsed.data.meetingPoint,
+      maxParticipants: parsed.data.maxParticipants,
+      organizerId: actor.id,
+      organizerName: parsed.data.organizerName ?? actor.displayName,
+    }));
+    res.status(201).json(VolunteerEventDetailSchema.parse(mapVolunteerEventDetail(created)));
+  });
+
+  app.post('/api/volunteer-events/:id/join', async (req, res) => {
+    if (!deps.repository.joinVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ Buổi Tình Nguyện Xanh.', 501);
+    }
+    const actor = await resolveVolunteerActor(req, deps);
+    const parsed = JoinVolunteerEventRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new DomainError('VALIDATION_ERROR', 'Thông tin đăng ký tham gia không hợp lệ.', 400);
+    }
+    const updated = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.joinVolunteerEvent!(req.params.id, {
+      userId: actor.id,
+      displayName: parsed.data.displayName ?? actor.displayName,
+    }));
+    res.json(VolunteerEventDetailSchema.parse(mapVolunteerEventDetail(updated)));
+  });
+
+  app.delete('/api/volunteer-events/:id/join', async (req, res) => {
+    if (!deps.repository.leaveVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ Buổi Tình Nguyện Xanh.', 501);
+    }
+    const actor = await resolveVolunteerActor(req, deps);
+    const updated = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.leaveVolunteerEvent!(req.params.id, actor.id));
+    res.json(VolunteerEventDetailSchema.parse(mapVolunteerEventDetail(updated)));
+  });
+
+  app.post('/api/volunteer-events/:id/after-image', upload.single('image'), async (req, res) => {
+    if (!deps.repository.submitVolunteerAfterImage || !deps.repository.getVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ nộp ảnh Sau buổi tình nguyện.', 501);
+    }
+    const actor = await resolveVolunteerActor(req, deps);
+    const eventId = String(req.params.id);
+    const image = validateImage(req.file);
+    const existing = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.getVolunteerEvent!(eventId));
+    if (!existing) throw new DomainError('VOLUNTEER_EVENT_NOT_FOUND', 'Không tìm thấy buổi tình nguyện.', 404);
+    if (existing.status === 'verified' || existing.status === 'cancelled') {
+      throw new DomainError('VOLUNTEER_EVENT_CLOSED', 'Buổi tình nguyện đã kết thúc, không thể nộp ảnh Sau.', 409);
+    }
+    const savedImage = await dependency('STORAGE_UNAVAILABLE', () => deps.storage.save(image));
+    try {
+      const updated = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.submitVolunteerAfterImage!(eventId, {
+        imageUrl: savedImage,
+        actorId: actor.id,
+        actor: actor.displayName,
+      }));
+      res.json(VolunteerEventDetailSchema.parse(mapVolunteerEventDetail(updated)));
+    } catch (error) {
+      try { await deps.storage.remove(savedImage); } catch { /* retain for operator review */ }
+      throw error;
+    }
+  });
+
+  app.patch('/api/volunteer-events/:id/review', async (req, res) => {
+    if (!deps.repository.reviewVolunteerEvent) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ duyệt buổi tình nguyện.', 501);
+    }
+    const operator = await requireOperatorAccess(req, deps);
+    const parsed = ReviewVolunteerEventRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new DomainError('VALIDATION_ERROR', 'Yêu cầu đánh giá buổi tình nguyện không hợp lệ.', 400);
+    }
+    const result = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.reviewVolunteerEvent!(req.params.id, {
+      decision: parsed.data.decision,
+      note: parsed.data.note,
+      actor: parsed.data.actor ?? operator?.displayName,
+      actorId: operator?.id ?? null,
+      issueCertificates: parsed.data.issueCertificates,
+    }));
+    if (parsed.data.decision === 'approve' && deps.pushNotifier && deps.repository.listPushTokensForVolunteerEvent) {
+      try {
+        const tokens = await deps.repository.listPushTokensForVolunteerEvent(result.event.id);
+        if (tokens.length > 0) {
+          await deps.pushNotifier.notifyStatusChange({
+            tokens,
+            incidentId: result.event.incidentId,
+            status: 'resolved',
+            title: 'GreenMerge · Đã cấp Giấy chứng nhận Tình nguyện Xanh',
+            body: `Buổi "${result.event.title}" đã được phê duyệt. Mở mục Chứng nhận để xem mã của bạn!`,
+          });
+        }
+      } catch {
+        // Notification failure must never fail or revert an approved volunteer event.
+      }
+    }
+    res.json(ReviewVolunteerEventResponseSchema.parse({
+      event: mapVolunteerEventDetail(result.event),
+      certificatesIssued: result.certificates.length,
+    }));
+  });
+
+  app.get('/api/me/certificates', async (req, res) => {
+    if (!deps.repository.listCertificatesByUser) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ tra cứu giấy chứng nhận.', 501);
+    }
+    const actor = await resolveVolunteerActor(req, deps);
+    const certificates = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.listCertificatesByUser!(actor.id));
+    res.json(MyCertificatesResponseSchema.parse({ certificates }));
+  });
+
+  app.get('/api/certificates/:code', async (req, res) => {
+    if (!deps.repository.findCertificateByCode) {
+      throw new DomainError('NOT_SUPPORTED', 'Repository hiện tại chưa hỗ trợ tra cứu giấy chứng nhận.', 501);
+    }
+    const cert = await dependency('DATABASE_UNAVAILABLE', () => deps.repository.findCertificateByCode!(req.params.code));
+    if (!cert) throw new DomainError('CERTIFICATE_NOT_FOUND', 'Không tìm thấy giấy chứng nhận với mã này.', 404);
+    res.json(PublicVolunteerCertificateSchema.parse(cert));
   });
 
   // Development-only controls. Never register them on a real backend.

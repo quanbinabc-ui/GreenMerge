@@ -6,6 +6,8 @@ export default function Home() {
       onReport={() => router.push('/report')}
       onResumePending={() => router.push('/result')}
       onDetail={id => router.push({ pathname: '/detail', params: { id } })}
+      onVolunteers={() => router.push('/volunteers')}
+      onCertificates={() => router.push('/certificates')}
     />
   );
 }

@@ -1,4 +1,8 @@
-import { DomainError, type IncidentStatus, type Location, type Severity } from '@civicmerge/contracts';
+import { randomBytes } from 'node:crypto';
+import {
+  DomainError, isIncidentSafeForVolunteer,
+  type IncidentStatus, type IncidentType, type Location, type Severity,
+} from '@civicmerge/contracts';
 
 const METERS_PER_DEGREE_LAT = 111_000;
 const SEVERITY_RANK: Record<Severity, number> = { low: 1, medium: 2, high: 3 };
@@ -72,4 +76,28 @@ export function mergeFeatures(existing: readonly string[], incoming: readonly st
 
 export function escalateSeverity(existing: Severity, incoming: Severity): Severity {
   return SEVERITY_RANK[incoming] > SEVERITY_RANK[existing] ? incoming : existing;
+}
+
+export function assertIncidentSafeForVolunteer(incident: { type: IncidentType; severity: Severity; status: IncidentStatus }): void {
+  if (incident.status === 'resolved') {
+    throw new DomainError('INCIDENT_RESOLVED', 'Sự cố này đã được xử lý xong, không thể mở buổi tình nguyện.', 409);
+  }
+  if (!isIncidentSafeForVolunteer(incident)) {
+    throw new DomainError(
+      'UNSAFE_FOR_COMMUNITY',
+      'Sự cố này không thuộc diện an toàn cho cộng đồng tự xử lý (chỉ áp dụng cho Rác thải hoặc Ngập nước mức Thấp).',
+      409,
+    );
+  }
+}
+
+const CERT_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+export function generateCertificateCode(year = new Date().getUTCFullYear()): string {
+  const bytes = randomBytes(6);
+  let suffix = '';
+  for (let i = 0; i < 6; i += 1) {
+    suffix += CERT_ALPHABET[bytes[i] % CERT_ALPHABET.length];
+  }
+  return `GM-${year}-${suffix}`;
 }

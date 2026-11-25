@@ -1,4 +1,13 @@
-import type { IncidentDetail, IncidentStatus, IncidentSummary, IncidentType, Severity } from '@civicmerge/contracts';
+import type {
+  IncidentDetail,
+  IncidentStatus,
+  IncidentSummary,
+  IncidentType,
+  Severity,
+  VolunteerEvent,
+  VolunteerEventStatus,
+  VolunteerParticipantStatus,
+} from '@civicmerge/contracts';
 
 const SEVERITY_PRIORITY: Record<Severity, number> = { high: 3, medium: 2, low: 1 };
 
@@ -19,6 +28,36 @@ export const STATUS_LABELS: Record<IncidentStatus, string> = {
   in_progress: 'Đang xử lý',
   resolved: 'Đã xử lý',
 };
+
+export const VOLUNTEER_STATUS_LABELS: Record<VolunteerEventStatus, string> = {
+  recruiting: 'Đang tuyển TNV',
+  in_progress: 'Đang thực hiện',
+  pending_review: 'Chờ duyệt ảnh Sau',
+  verified: 'Đã duyệt & Cấp CN',
+  cancelled: 'Đã hủy',
+};
+
+export const PARTICIPANT_STATUS_LABELS: Record<VolunteerParticipantStatus, string> = {
+  joined: 'Đã đăng ký',
+  checked_in: 'Đã điểm danh',
+  certified: 'Đã cấp chứng nhận',
+  cancelled: 'Đã hủy',
+};
+
+const VOLUNTEER_PRIORITY: Record<VolunteerEventStatus, number> = {
+  pending_review: 4,
+  in_progress: 3,
+  recruiting: 2,
+  verified: 1,
+  cancelled: 0,
+};
+
+export function sortVolunteerEventsForReview(events: readonly VolunteerEvent[]): VolunteerEvent[] {
+  return [...events].sort((a, b) =>
+    VOLUNTEER_PRIORITY[b.status] - VOLUNTEER_PRIORITY[a.status]
+    || b.updatedAt.localeCompare(a.updatedAt),
+  );
+}
 
 export interface AdminKpis {
   totalIncidents: number;
