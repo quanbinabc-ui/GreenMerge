@@ -14,3 +14,4 @@ apps/mobile/credentials.json
 *.jks
 *.apk
 *.aab
+~$*

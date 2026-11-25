@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenMerge — Trải nghiệm Giao diện Điện thoại & Trang Quản trị</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --fg: #0f172a;
+      --muted: #475569;
+      --primary: #15803d;
+      --primary-fg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+    }
+    .topbar-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; }
+    .brand-logo {
+      width: 38px; height: 38px; border-radius: 11px;
+      background: linear-gradient(135deg, #15803d, #0284c7);
+      color: #fff; font-weight: 800; font-size: 14px;
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    .brand h1 { margin: 0; font-size: 15px; font-weight: 800; line-height: 1.2; }
+    .brand p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .tab-group {
+      display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px;
+      border-radius: 12px; background: var(--bg); border: 1px solid var(--border);
+    }
+    .btn {
+      border: 1px solid transparent; background: transparent; color: var(--fg);
+      padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: opacity 0.15s ease;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-outline { background: var(--card); border-color: var(--border); }
+    .btn-active { background: var(--primary) !important; color: var(--primary-fg) !important; border-color: var(--primary) !important; }
+    .main { max-width: 1440px; margin: 0 auto; padding: 20px; }
+    .subbar {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 10px; margin-bottom: 16px; font-size: 12.5px; color: var(--muted);
+    }
+    .subbar-center { justify-content: center; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .hidden { display: none !important; }
+
+    .hero-stage {
+      border-radius: 20px;
+      padding: 26px;
+      background: linear-gradient(135deg, #ecfdf5 0%, #f0f9ff 100%);
+      border: 1px solid #cbd5e1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 28px;
+    }
+    .hero-phone-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .hero-web-col { flex: 1 1 680px; min-width: 300px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .pill-cap {
+      font-size: 12px; font-weight: 700; padding: 5px 14px; border-radius: 999px;
+      background: #fff; border: 1px solid #bbf7d0; color: #14532d;
+    }
+    .pill-cap.blue { border-color: #bae6fd; color: #0369a1; }
+
+    .phone-frame {
+      width: 380px; max-width: 100%; border-radius: 42px; background: #0f172a; padding: 11px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+    }
+    .phone-screen {
+      background: #f4f7fb; color: #0f172a; border-radius: 32px; overflow: hidden;
+      height: 760px; display: flex; flex-direction: column;
+    }
+    .phone-notch { width: 108px; height: 22px; background: #0f172a; border-radius: 999px; margin: 7px auto 0; }
+    .phone-scroll { flex: 1; overflow-y: auto; padding: 12px 13px 20px; scrollbar-width: thin; }
+
+    .browser-frame {
+      width: 100%; border-radius: 16px; overflow: hidden; border: 1px solid #cbd5e1;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
+    }
+    .web-light {
+      --w-bg: #f4f7fb; --w-surface: #ffffff; --w-alt: #f8fafc; --w-ink: #0f172a;
+      --w-muted: #475569; --w-subtle: #64748b; --w-border: #e2e8f0;
+      --w-primary: #0284c7; --w-primary-dark: #0369a1; --w-primary-soft: #e0f2fe;
+      --w-success: #15803d; --w-success-soft: #dcfce7;
+      --w-warn: #b45309; --w-warn-soft: #fef3c7;
+      --w-danger: #b91c1c; --w-danger-soft: #fee2e2;
+    }
+    .web-dark {
+      --w-bg: #0b1120; --w-surface: #111827; --w-alt: #1e293b; --w-ink: #f8fafc;
+      --w-muted: #cbd5e1; --w-subtle: #94a3b8; --w-border: #263244;
+      --w-primary: #38bdf8; --w-primary-dark: #7dd3fc; --w-primary-soft: rgba(56,189,248,0.15);
+      --w-success: #4ade80; --w-success-soft: rgba(74,222,128,0.15);
+      --w-warn: #fbbf24; --w-warn-soft: rgba(251,191,36,0.16);
+      --w-danger: #f87171; --w-danger-soft: rgba(248,113,113,0.16);
+    }
+    .web-body { background: var(--w-bg); color: var(--w-ink); padding-bottom: 18px; }
+    .web-card { background: var(--w-surface); border: 1px solid var(--w-border); }
+    .web-alt { background: var(--w-alt); border: 1px solid var(--w-border); }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+    .web-split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr); gap: 12px; align-items: start; }
+    @media (max-width: 900px) { .web-split { grid-template-columns: 1fr; } }
+    .hotspot-grid {
+      background:
+        radial-gradient(circle at 22% 28%, rgba(2,132,199,0.12), transparent 45%),
+        radial-gradient(circle at 72% 64%, rgba(21,128,61,0.12), transparent 40%),
+        repeating-linear-gradient(0deg, transparent, transparent 39px, var(--w-border) 40px),
+        repeating-linear-gradient(90deg, transparent, transparent 39px, var(--w-border) 40px),
+        var(--w-alt);
+    }
+    .mobile-stage { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; padding: 6px 0; }
+    .capture-clean .toolbar-chrome { display: none !important; }
+    .capture-exit {
+      display: none; position: fixed; bottom: 16px; right: 16px; z-index: 50;
+      padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid #cbd5e1;
+      font-size: 12px; font-weight: 700; box-shadow: 0 8px 24px rgba(15,23,42,0.16); cursor: pointer;
+    }
+    .capture-clean .capture-exit { display: inline-flex !important; }
+  </style>
+</head>
+<body>
+  <button id="btn-exit-clean" class="capture-exit" onclick="toggleCleanMode()">✕ Hiện lại thanh điều khiển</button>
+
+  <header class="topbar toolbar-chrome">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-logo">GM</div>
+        <div>
+          <h1>GreenMerge — Giao diện Điện thoại &amp; Trang Quản trị</h1>
+          <p>SE-Hackathon Challenge 2026 · Trường Kinh tế – Đại học Công nghiệp Hà Nội</p>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="tab-group">
+          <button id="mode-both" class="btn" onclick="setMode('both')">📱+💻 Xem song song</button>
+          <button id="mode-mobile" class="btn" onclick="setMode('mobile')">📱 Điện thoại (6 màn hình)</button>
+          <button id="mode-web" class="btn" onclick="setMode('web')">💻 Web Ban quản lý (3 tab)</button>
+        </div>
+        <button class="btn btn-outline" onclick="toggleCleanMode()">📸 Chế độ chụp sạch</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- BOTH -->
+    <section id="view-both">
+      <div class="subbar toolbar-chrome">
+        <span>Chọn cặp giao diện để trải nghiệm tương tác hoặc chụp màn hình đưa vào Slide:</span>
+        <div class="btn-row">
+          <button id="preset-tier1" class="btn btn-outline" onclick="setPairPreset('tier1')">Cặp 1: Tầng 1 (Gom trùng AI + Bản đồ)</button>
+          <button id="preset-tier2" class="btn btn-outline" onclick="setPairPreset('tier2')">Cặp 2: Tầng 2 (Tình nguyện Xanh + Duyệt Trước–Sau)</button>
+          <button id="preset-cert" class="btn btn-outline" onclick="setPairPreset('cert')">Cặp 3: Trang chủ + Bảng KPI &amp; Phát động</button>
+        </div>
+      </div>
+      <div class="hero-stage">
+        <div class="hero-phone-col">
+          <div id="both-phone-host"></div>
+          <span id="both-phone-caption" class="pill-cap">📱 Ứng dụng Điện thoại</span>
+        </div>
+        <div class="hero-web-col">
+          <div id="both-web-host" style="width:100%;"></div>
+          <span id="both-web-caption" class="pill-cap blue">💻 Trang Quản trị Ban quản lý</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- MOBILE ONLY -->
+    <section id="view-mobile" class="hidden">
+      <div class="subbar subbar-center toolbar-chrome">
+        <div class="btn-row">
+          <button data-ps="home" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('home')">1. Trang chủ</button>
+          <button data-ps="report" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('report')">2. Chụp báo cáo &amp; GPS</button>
+          <button data-ps="result" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('result')">3. Kết quả AI &amp; Gộp 2 ảnh</button>
+          <button data-ps="detail" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('detail')">4. Chi tiết hồ sơ</button>
+          <button data-ps="volunteer" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('volunteer')">5. Buổi Tình Nguyện Xanh</button>
+          <button data-ps="cert" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('cert')">6. Giấy Chứng Nhận Xanh</button>
+          <button data-ps="gallery" class="btn btn-outline ps-btn" onclick="selectPhoneScreen('gallery')">✨ Xem 3 màn hình cùng lúc</button>
+        </div>
+      </div>
+      <div id="mobile-stage" class="mobile-stage"></div>
+    </section>
+
+    <!-- WEB ONLY -->
+    <section id="view-web" class="hidden">
+      <div class="subbar toolbar-chrome">
+        <div class="btn-row">
+          <button data-wt="list" class="btn btn-outline wt-btn" onclick="selectWebTab('list')">1. Danh sách ưu tiên &amp; Phát động</button>
+          <button data-wt="map" class="btn btn-outline wt-btn" onclick="selectWebTab('map')">2. Bản đồ điểm nóng GPS</button>
+          <button data-wt="volunteer" class="btn btn-outline wt-btn" onclick="selectWebTab('volunteer')">3. 🌿 Duyệt Tình nguyện Xanh (Trước–Sau)</button>
+        </div>
+        <button id="btn-web-theme" class="btn btn-outline" onclick="toggleWebTheme()">🌙 Chuyển giao diện Tối</button>
+      </div>
+      <div id="web-stage"></div>
+    </section>
+  </main>
+
+  <script>
+    const PHOTOS = {
+      pothole1: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#bae6fd"/><stop offset="100%" stop-color="#e0f2fe"/></linearGradient>
+          <linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#475569"/><stop offset="100%" stop-color="#334155"/></linearGradient>
+        </defs>
+        <rect width="400" height="72" fill="url(#sky)"/>
+        <rect y="58" width="400" height="22" fill="#22c55e" opacity="0.55"/>
+        <rect y="72" width="400" height="168" fill="url(#road)"/>
+        <rect y="72" width="400" height="8" fill="#cbd5e1"/>
+        <line x1="20" y1="110" x2="100" y2="110" stroke="#facc15" stroke-width="4" stroke-dasharray="28 16"/>
+        <line x1="260" y1="110" x2="380" y2="110" stroke="#facc15" stroke-width="4" stroke-dasharray="28 16"/>
+        <ellipse cx="205" cy="166" rx="82" ry="34" fill="#1e293b" stroke="#94a3b8" stroke-width="3"/>
+        <ellipse cx="202" cy="170" rx="68" ry="25" fill="#0f172a"/>
+        <ellipse cx="206" cy="174" rx="52" ry="17" fill="#38bdf8" opacity="0.48"/>
+        <path d="M125 162 L95 178 M285 165 L322 180 M195 132 L188 118" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="155" cy="180" r="4" fill="#94a3b8"/><circle cx="252" cy="188" r="5" fill="#cbd5e1"/>
+        <rect x="12" y="12" width="142" height="24" rx="6" fill="rgba(15,23,42,0.72)"/>
+        <text x="20" y="28" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">📍 Cổng A · Góc chụp 1</text>
+      </svg>`)}`,
+      pothole2: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+        <defs><linearGradient id="road2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#64748b"/><stop offset="100%" stop-color="#334155"/></linearGradient></defs>
+        <rect width="400" height="58" fill="#dcfce7"/>
+        <rect y="58" width="400" height="182" fill="url(#road2)"/>
+        <rect y="58" width="400" height="7" fill="#e2e8f0"/>
+        <ellipse cx="185" cy="158" rx="92" ry="38" fill="#1e293b" stroke="#cbd5e1" stroke-width="3"/>
+        <ellipse cx="188" cy="164" rx="72" ry="27" fill="#0f172a"/>
+        <ellipse cx="184" cy="168" rx="56" ry="18" fill="#0ea5e9" opacity="0.5"/>
+        <path d="M98 156 L70 168 M274 155 L315 166 M218 195 L235 215" stroke="#0f172a" stroke-width="2.5"/>
+        <rect x="12" y="12" width="146" height="24" rx="6" fill="rgba(15,23,42,0.72)"/>
+        <text x="20" y="28" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">📍 Cách 11m · Góc chụp 2</text>
+      </svg>`)}`,
+      trashBefore: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+        <defs><linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e2e8f0"/><stop offset="100%" stop-color="#cbd5e1"/></linearGradient></defs>
+        <rect width="400" height="110" fill="url(#wall)"/>
+        <rect x="28" y="24" width="60" height="50" rx="4" fill="#94a3b8" opacity="0.45"/>
+        <rect x="120" y="24" width="60" height="50" rx="4" fill="#94a3b8" opacity="0.45"/>
+        <rect x="295" y="15" width="85" height="95" fill="#86efac" opacity="0.45"/>
+        <rect y="110" width="400" height="130" fill="#94a3b8"/>
+        <path d="M0 110 H400" stroke="#64748b" stroke-width="3"/>
+        <ellipse cx="200" cy="186" rx="130" ry="34" fill="#64748b" opacity="0.45"/>
+        <path d="M100 185 Q125 130 170 142 Q195 118 240 142 Q285 136 305 186 Z" fill="#1e293b"/>
+        <path d="M135 188 Q165 145 210 156 Q245 144 275 188 Z" fill="#334155"/>
+        <rect x="118" y="168" width="28" height="13" rx="5" fill="#38bdf8" transform="rotate(-14 118 168)"/>
+        <rect x="255" y="170" width="26" height="12" rx="5" fill="#f97316" transform="rotate(18 255 170)"/>
+        <rect x="182" y="174" width="38" height="22" rx="3" fill="#d97706" transform="rotate(-6 182 174)"/>
+        <polygon points="154,195 170,195 167,172 157,172" fill="#f8fafc" stroke="#cbd5e1"/>
+        <polygon points="234,198 250,198 247,175 237,175" fill="#fde047" stroke="#eab308"/>
+        <circle cx="290" cy="192" r="14" fill="#ef4444" opacity="0.85"/>
+        <circle cx="96" cy="192" r="11" fill="#f8fafc" opacity="0.9"/>
+        <rect x="12" y="12" width="166" height="24" rx="6" fill="rgba(185,28,28,0.88)"/>
+        <text x="20" y="28" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">📷 TRƯỚC · Rác sau KTX B</text>
+      </svg>`)}`,
+      trashAfter: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+        <defs><linearGradient id="skyClean" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#bae6fd"/><stop offset="100%" stop-color="#f0fdf4"/></linearGradient></defs>
+        <rect width="400" height="110" fill="url(#skyClean)"/>
+        <rect x="18" y="26" width="190" height="84" fill="#f1f5f9" stroke="#cbd5e1"/>
+        <rect x="34" y="42" width="44" height="36" rx="4" fill="#bae6fd"/>
+        <rect x="96" y="42" width="44" height="36" rx="4" fill="#bae6fd"/>
+        <circle cx="320" cy="54" r="34" fill="#22c55e"/><circle cx="355" cy="64" r="28" fill="#16a34a"/>
+        <rect x="332" y="74" width="10" height="38" fill="#78350f"/>
+        <circle cx="265" cy="66" r="24" fill="#4ade80"/><rect x="261" y="82" width="8" height="28" fill="#78350f"/>
+        <rect y="110" width="400" height="130" fill="#e2e8f0"/>
+        <path d="M0 110 H400" stroke="#94a3b8" stroke-width="2"/>
+        <path d="M0 165 H400 M0 205 H400" stroke="#cbd5e1" stroke-width="1.5"/>
+        <rect x="282" y="132" width="36" height="52" rx="5" fill="#16a34a"/><rect x="278" y="126" width="44" height="9" rx="3" fill="#15803d"/>
+        <text x="291" y="162" fill="#fff" font-family="sans-serif" font-size="14" font-weight="700">♻</text>
+        <rect x="328" y="132" width="36" height="52" rx="5" fill="#0284c7"/><rect x="324" y="126" width="44" height="9" rx="3" fill="#0369a1"/>
+        <text x="337" y="162" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">NHỰA</text>
+        <text x="115" y="165" font-size="22">✨</text><text x="195" y="195" font-size="18">✨</text>
+        <rect x="12" y="12" width="175" height="24" rx="6" fill="rgba(21,128,61,0.92)"/>
+        <text x="20" y="28" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">✨ SAU · Đã dọn sạch đẹp</text>
+      </svg>`)}`,
+      floodMild: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+        <rect width="400" height="75" fill="#e0f2fe"/>
+        <rect y="75" width="400" height="165" fill="#64748b"/>
+        <ellipse cx="200" cy="168" rx="145" ry="44" fill="#0ea5e9" opacity="0.65"/>
+        <ellipse cx="195" cy="170" rx="108" ry="28" fill="#38bdf8" opacity="0.5"/>
+        <rect x="165" y="155" width="70" height="26" rx="4" fill="#334155" stroke="#94a3b8"/>
+        <line x1="175" y1="155" x2="175" y2="181" stroke="#cbd5e1" stroke-width="2"/>
+        <line x1="190" y1="155" x2="190" y2="181" stroke="#cbd5e1" stroke-width="2"/>
+        <line x1="205" y1="155" x2="205" y2="181" stroke="#cbd5e1" stroke-width="2"/>
+        <line x1="220" y1="155" x2="220" y2="181" stroke="#cbd5e1" stroke-width="2"/>
+        <ellipse cx="184" cy="162" rx="12" ry="6" fill="#ca8a04" transform="rotate(-20 184 162)"/>
+        <ellipse cx="212" cy="169" rx="14" ry="7" fill="#a16207" transform="rotate(15 212 169)"/>
+        <rect x="12" y="12" width="180" height="24" rx="6" fill="rgba(2,132,199,0.88)"/>
+        <text x="20" y="28" fill="#fff" font-family="sans-serif" font-size="11" font-weight="700">💧 Lá cây che cống · Mức Thấp</text>
+      </svg>`)}`
+    };
+
+    let currentMode = 'both';
+    let currentPair = 'tier2';
+    let currentPhoneScreen = 'home';
+    let currentWebTab = 'volunteer';
+    let webDark = false;
+
+    function renderPhoneFrame(screenKey) {
+      const titles = {
+        home: { back: false, sub: 'MỘT SỰ CỐ · MỘT HỒ SƠ' },
+        report: { back: true, sub: 'BÁO CÁO SỰ CỐ MỚI' },
+        result: { back: true, sub: 'KẾT QUẢ AI & ĐỐI CHIẾU' },
+        detail: { back: true, sub: 'HỒ SƠ THỐNG NHẤT' },
+        volunteer: { back: true, sub: 'TẦNG 2 · TÌNH NGUYỆN XANH' },
+        cert: { back: true, sub: 'GIẤY CHỨNG NHẬN XANH' },
+      };
+      const meta = titles[screenKey] || titles.home;
+      return `
+        <div class="phone-frame">
+          <div class="phone-screen">
+            <div style="background:#ffffff; border-bottom:1px solid #e2e8f0; padding:6px 14px 10px;">
+              <div class="phone-notch"></div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:700; color:#475569; margin-top:-18px; margin-bottom:10px; padding:0 4px;">
+                <span>9:41</span><span>5G 🔋</span>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  ${meta.back ? `<span style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:11px; font-weight:700; padding:4px 8px; border-radius:8px;">← Trang chủ</span>` : ''}
+                  <div>
+                    <div style="font-size:17px; font-weight:800; color:#14532d; letter-spacing:-0.3px; line-height:1.1;">GreenMerge</div>
+                    <div style="font-size:9.5px; font-weight:700; color:#64748b; letter-spacing:0.4px;">${meta.sub}</div>
+                  </div>
+                </div>
+                <span style="font-size:10px; font-weight:700; color:#15803d; background:#dcfce7; border:1px solid #86efac; padding:3px 8px; border-radius:999px;">● Trực tuyến</span>
+              </div>
+            </div>
+            <div class="phone-scroll">${phoneBodyHtml(screenKey)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function phoneBodyHtml(key) {
+      if (key === 'home') {
+        return `
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:12px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <div>
+                <div style="font-size:15px; font-weight:800; color:#0f172a;">Cộng đồng Xanh HaUI</div>
+                <div style="font-size:11px; color:#64748b;">Chụp 1 ảnh · AI gom trùng · Cùng dọn sạch</div>
+              </div>
+              <span style="font-size:11px; font-weight:700; color:#0369a1; background:#e0f2fe; padding:5px 9px; border-radius:9px;">👤 Minh An</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px;">
+              <div style="background:#0284c7; color:#fff; text-align:center; padding:9px 8px; border-radius:11px; font-size:12px; font-weight:800;">📷 Báo cáo sự cố</div>
+              <div style="background:#15803d; color:#fff; text-align:center; padding:9px 8px; border-radius:11px; font-size:12px; font-weight:800;">🌿 Tình nguyện Xanh</div>
+            </div>
+            <div style="background:#dcfce7; color:#15803d; border:1px solid #86efac; text-align:center; padding:6px 8px; border-radius:10px; font-size:11.5px; font-weight:700;">🏅 Giấy Chứng Nhận của tôi (2 chứng nhận)</div>
+          </div>
+          <div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:10px;">
+            <span style="background:#e0f2fe; color:#0369a1; border:1px solid #0284c7; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;">Tất cả (27)</span>
+            <span style="background:#fff; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap;">Rác thải</span>
+            <span style="background:#fff; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap;">Ổ gà</span>
+            <span style="background:#fff; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap;">Ngập nước</span>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:11px; margin-bottom:10px;">
+            <div style="position:relative; border-radius:11px; overflow:hidden; margin-bottom:8px;">
+              <img src="${PHOTOS.trashBefore}" style="width:100%; height:128px; object-fit:cover; display:block;" />
+              <span style="position:absolute; right:8px; bottom:8px; background:rgba(15,23,42,0.82); color:#fff; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;">📸 4 phản ánh đã gộp</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px;">
+              <span style="background:#dcfce7; color:#15803d; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">● Rác thải</span>
+              <span style="background:#fef3c7; color:#b45309; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">Mức độ: Trung bình</span>
+              <span style="background:#dcfce7; color:#15803d; border:1px solid #86efac; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">🌿 BQL đã phát động TNV</span>
+            </div>
+            <div style="font-size:13px; font-weight:700; color:#0f172a; margin-bottom:3px;">Bãi rác nhựa và ly đồ uống tụ đọng sau KTX nhà B</div>
+            <div style="font-size:11px; color:#64748b;">📍 Lối đi sau Ký túc xá B · ĐH Công nghiệp Hà Nội</div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:11px;">
+            <div style="position:relative; border-radius:11px; overflow:hidden; margin-bottom:8px;">
+              <img src="${PHOTOS.pothole1}" style="width:100%; height:118px; object-fit:cover; display:block;" />
+              <span style="position:absolute; right:8px; bottom:8px; background:rgba(15,23,42,0.82); color:#fff; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;">📸 2 phản ánh đã gộp</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:5px;">
+              <span style="background:#fef3c7; color:#b45309; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">● Ổ gà</span>
+              <span style="background:#fee2e2; color:#b91c1c; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">Mức độ: Cao</span>
+              <span style="background:#fef3c7; color:#b45309; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">Đang xử lý</span>
+            </div>
+            <div style="font-size:13px; font-weight:700; color:#0f172a;">Ổ gà sâu đọng nước trên mặt đường nhựa cổng A</div>
+          </div>
+        `;
+      }
+      if (key === 'report') {
+        return `
+          <div style="font-size:18px; font-weight:800; color:#0f172a; margin-bottom:2px;">Báo cáo sự cố mới</div>
+          <div style="font-size:11.5px; color:#64748b; margin-bottom:10px;">Chụp 1 ảnh duy nhất — AI tự phân loại &amp; viết mô tả</div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:12px; margin-bottom:10px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:8px;">1. Ảnh hiện trường</div>
+            <img src="${PHOTOS.pothole2}" style="width:100%; height:176px; object-fit:cover; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:8px;" />
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; text-align:center; padding:8px; border-radius:10px; font-size:12px; font-weight:700;">📷 Chụp lại</div>
+              <div style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; text-align:center; padding:8px; border-radius:10px; font-size:12px; font-weight:700;">🖼️ Chọn thư viện</div>
+            </div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:12px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:13px; font-weight:700;">2. Vị trí GPS</span>
+              <span style="background:#dcfce7; color:#15803d; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">✓ Đã định vị</span>
+            </div>
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:9px; font-size:11.5px; color:#334155;">
+              <div>📍 <b>Đường Cầu Diễn, Cổng A – ĐH Công nghiệp HN</b></div>
+              <div style="color:#64748b; margin-top:3px;">Tọa độ: 21.053720, 105.735140 · Sai số ~8m</div>
+            </div>
+          </div>
+          <div style="background:#0284c7; color:#fff; text-align:center; padding:13px; border-radius:14px; font-size:14px; font-weight:800;">✨ Gửi phân tích bằng AI →</div>
+        `;
+      }
+      if (key === 'result') {
+        return `
+          <div style="font-size:17px; font-weight:800; color:#0f172a; margin-bottom:8px;">Kết quả AI &amp; Gợi ý gộp trùng</div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:11px; margin-bottom:10px;">
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px;">
+              <span style="background:#fef3c7; color:#b45309; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">● Ổ gà</span>
+              <span style="background:#fee2e2; color:#b91c1c; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">Mức độ: Cao</span>
+            </div>
+            <div style="font-size:12.5px; color:#0f172a; line-height:1.4; margin-bottom:6px;"><b>AI mô tả:</b> Ổ gà lớn, sâu trên mặt đường nhựa có đọng nước, gây nguy hiểm cho xe máy di chuyển.</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <span style="background:#f1f5f9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px;">Mặt đường: Nhựa</span>
+              <span style="background:#f1f5f9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px;">Hình dáng: Lõm sâu</span>
+            </div>
+          </div>
+          <div style="background:#eff6ff; border:1.5px solid #38bdf8; border-radius:16px; padding:11px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:12px; font-weight:800; color:#0369a1;">🔍 PHÁT HIỆN HỒ SƠ CÓ THỂ TRÙNG</span>
+              <span style="background:#15803d; color:#fff; font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:999px;">Khớp 92%</span>
+            </div>
+            <div style="font-size:11px; color:#334155; margin-bottom:8px;">Cách vị trí cũ <b>11 mét</b> · Cùng loại Ổ gà · Cùng mặt đường nhựa</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:9px;">
+              <div>
+                <img src="${PHOTOS.pothole2}" style="width:100%; height:92px; object-fit:cover; border-radius:9px; border:1px solid #bae6fd;" />
+                <div style="font-size:10px; font-weight:700; color:#0369a1; text-align:center; margin-top:3px;">Ảnh bạn vừa chụp</div>
+              </div>
+              <div>
+                <img src="${PHOTOS.pothole1}" style="width:100%; height:92px; object-fit:cover; border-radius:9px; border:1px solid #bae6fd;" />
+                <div style="font-size:10px; font-weight:700; color:#475569; text-align:center; margin-top:3px;">Hồ sơ đã có (#A92F)</div>
+              </div>
+            </div>
+            <div style="background:#15803d; color:#fff; text-align:center; padding:10px; border-radius:11px; font-size:12.5px; font-weight:800; margin-bottom:6px;">✓ Đúng chỗ này — Xác nhận gộp chung</div>
+            <div style="background:#fff; color:#0369a1; border:1px solid #bae6fd; text-align:center; padding:8px; border-radius:10px; font-size:11.5px; font-weight:700;">Không phải — Tạo hồ sơ sự cố mới</div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:9px; font-size:11px; color:#64748b;">
+            📝 Ghi chú thêm (tùy chọn): <i>“Buổi tối khuất đèn rất dễ vấp ngã…”</i>
+          </div>
+        `;
+      }
+      if (key === 'detail') {
+        return `
+          <div style="font-size:17px; font-weight:800; color:#0f172a; margin-bottom:2px;">Hồ sơ sự cố thống nhất</div>
+          <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Mã hồ sơ: #TR84B209</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-bottom:10px;">
+            <div style="background:#dcfce7; border:1px solid #86efac; color:#15803d; text-align:center; padding:6px 4px; border-radius:9px; font-size:10.5px; font-weight:800;">✓ 1. Tiếp nhận</div>
+            <div style="background:#e0f2fe; border:1.5px solid #0284c7; color:#0369a1; text-align:center; padding:6px 4px; border-radius:9px; font-size:10.5px; font-weight:800;">2. Đang xử lý</div>
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; color:#94a3b8; text-align:center; padding:6px 4px; border-radius:9px; font-size:10.5px; font-weight:700;">3. Đã xử lý</div>
+          </div>
+          <div style="background:#dcfce7; border:1.5px solid #86efac; border-radius:14px; padding:10px; margin-bottom:10px;">
+            <span style="background:#15803d; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px;">✓ ĐÃ HỢP NHẤT PHẢN ÁNH</span>
+            <div style="font-size:12px; color:#14532d; margin-top:5px; font-weight:600;">Hồ sơ này đã gom <b>4 lượt báo cáo</b> từ sinh viên vào một đầu mối xử lý duy nhất.</div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:11px; margin-bottom:10px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:6px;">Bãi rác nhựa và ly đồ uống tụ đọng sau KTX nhà B</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; background:#f8fafc; padding:8px; border-radius:10px; font-size:11px;">
+              <div><div style="color:#64748b;">Đơn vị tiếp nhận</div><b>🏛️ Tổ vệ sinh KTX</b></div>
+              <div><div style="color:#64748b;">Tổng minh chứng</div><b>📸 4 hình ảnh</b></div>
+            </div>
+            <div style="font-size:11px; color:#475569; margin-top:7px;">📍 Lối đi sau KTX nhà B, ĐH Công nghiệp Hà Nội</div>
+          </div>
+          <div style="background:#f0fdf4; border:1.5px solid #22c55e; border-radius:14px; padding:11px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <span style="font-size:12.5px; font-weight:800; color:#14532d;">🌿 Buổi Tình Nguyện Xanh</span>
+              <span style="background:#dcfce7; color:#15803d; font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px;">BQL đã phát động</span>
+            </div>
+            <div style="font-size:12.5px; font-weight:700; color:#0f172a; margin-bottom:4px;">Chủ nhật Xanh — Dọn lối đi sau KTX B</div>
+            <div style="font-size:11px; color:#475569; margin-bottom:8px;">📍 Cổng B KTX · 👥 12/15 TNV · 🕒 07:30 Chủ nhật</div>
+            <div style="background:#15803d; color:#fff; text-align:center; padding:9px; border-radius:10px; font-size:12px; font-weight:800;">Bấm đăng ký tham gia →</div>
+          </div>
+        `;
+      }
+      if (key === 'volunteer') {
+        return `
+          <div style="background:#dcfce7; border:1.5px solid #86efac; border-radius:14px; padding:10px; margin-bottom:10px;">
+            <span style="background:#15803d; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px;">🏅 ĐÃ PHÊ DUYỆT &amp; CẤP CHỨNG NHẬN</span>
+            <div style="font-size:11.5px; color:#14532d; margin-top:5px;">Ban quản lý KTX đã duyệt ảnh Trước–Sau, tự động đóng sự cố và cấp 15 Giấy chứng nhận.</div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:11px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <span style="background:#dcfce7; color:#15803d; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">Đã duyệt &amp; Cấp CN</span>
+              <span style="background:#e0f2fe; color:#0369a1; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px;">👥 15/15 TNV</span>
+            </div>
+            <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;">Chủ nhật Xanh — Dọn lối đi sau KTX B</div>
+            <div style="height:7px; border-radius:999px; background:#e2e8f0; overflow:hidden; margin-bottom:7px;"><div style="width:100%; height:100%; background:#15803d;"></div></div>
+            <div style="font-size:11px; color:#475569;">🏛️ Phát động bởi: Ban quản lý KTX &amp; Đoàn trường</div>
+            <div style="font-size:11px; color:#475569;">📍 Điểm tập trung: Cổng B KTX · 🕒 07:30 CN</div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:11px; margin-bottom:10px;">
+            <div style="font-size:12.5px; font-weight:800; margin-bottom:7px;">So sánh Trước – Sau (Before / After)</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div>
+                <img src="${PHOTOS.trashBefore}" style="width:100%; height:92px; object-fit:cover; border-radius:9px; border:1px solid #fca5a5;" />
+                <div style="font-size:10px; font-weight:700; color:#b91c1c; text-align:center; margin-top:3px;">📷 Ảnh TRƯỚC</div>
+              </div>
+              <div>
+                <img src="${PHOTOS.trashAfter}" style="width:100%; height:92px; object-fit:cover; border-radius:9px; border:1px solid #86efac;" />
+                <div style="font-size:10px; font-weight:700; color:#15803d; text-align:center; margin-top:3px;">✨ Ảnh SAU (Sạch)</div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:10px;">
+            <div style="font-size:12px; font-weight:800; margin-bottom:6px;">Sinh viên tham gia (15)</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:#f8fafc; border-radius:8px; margin-bottom:5px;">
+              <div><div style="font-size:12px; font-weight:700;">Nguyễn Minh An</div><div style="font-size:10px; color:#64748b;">CNTT-K18</div></div>
+              <span style="font-size:10.5px; font-weight:800; color:#15803d; background:#dcfce7; padding:2px 7px; border-radius:6px;">GM-2026-8K4P2M</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:#f8fafc; border-radius:8px;">
+              <div><div style="font-size:12px; font-weight:700;">Lê Thảo Chi</div><div style="font-size:10px; color:#64748b;">Kinh tế-K18</div></div>
+              <span style="font-size:10.5px; font-weight:800; color:#15803d; background:#dcfce7; padding:2px 7px; border-radius:6px;">GM-2026-9T2X7A</span>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div style="font-size:18px; font-weight:800; color:#0f172a; margin-bottom:2px;">🏅 Giấy Chứng Nhận Xanh</div>
+        <div style="font-size:11px; color:#64748b; margin-bottom:10px;">Ghi nhận đóng góp tình nguyện &amp; tra cứu xác thực công khai</div>
+        <div style="background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:11px; margin-bottom:10px;">
+          <div style="font-size:12px; font-weight:800; margin-bottom:6px;">Tra cứu công khai mã chứng nhận</div>
+          <div style="display:flex; gap:6px; margin-bottom:9px;">
+            <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:9px; padding:7px 9px; font-size:12px; font-weight:700; color:#0f172a;">GM-2026-8K4P2M</div>
+            <div style="background:#0284c7; color:#fff; border-radius:9px; padding:7px 11px; font-size:12px; font-weight:700;">Tra cứu</div>
+          </div>
+          <div style="background:#dcfce7; border:1.5px solid #22c55e; border-radius:12px; padding:11px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="background:#15803d; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px;">✓ CHỨNG NHẬN HỢP LỆ</span>
+              <span style="background:#fff; color:#15803d; font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px;">GM-2026-8K4P2M</span>
+            </div>
+            <div style="font-size:16px; font-weight:800; color:#0f172a; margin-bottom:3px;">Nguyễn Minh An</div>
+            <div style="font-size:12px; color:#14532d; margin-bottom:6px;">Đã hoàn thành xuất sắc buổi: <b>Chủ nhật Xanh — Dọn lối đi sau KTX B</b></div>
+            <div style="font-size:11px; color:#475569;">🏛️ Đơn vị cấp: Ban quản lý KTX &amp; Đoàn trường HaUI</div>
+            <div style="font-size:11px; color:#475569;">📅 Hoàn thành: 09:00 · 22/11/2026</div>
+          </div>
+        </div>
+        <div style="font-size:12.5px; font-weight:800; margin-bottom:6px;">Chứng nhận của tôi (2)</div>
+        <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:14px; padding:11px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:10.5px; font-weight:800; color:#15803d;">🌿 TÌNH NGUYỆN XANH</span>
+            <span style="background:#fff; color:#15803d; font-size:11px; font-weight:800; padding:2px 7px; border-radius:6px;">GM-2026-4H7C1Q</span>
+          </div>
+          <div style="font-size:14px; font-weight:800; color:#0f172a;">Khơi thông lá cây tắc cống sân B</div>
+          <div style="font-size:11px; color:#475569; margin-top:3px;">Cấp bởi: Đoàn trường HaUI · 15/11/2026</div>
+        </div>
+      `;
+    }
+
+    function renderWebAdmin(tabKey) {
+      const themeClass = webDark ? 'web-dark' : 'web-light';
+      return `
+        <div class="browser-frame ${themeClass}">
+          <div style="background:#e2e8f0; padding:8px 14px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #cbd5e1;">
+            <div style="display:flex; gap:6px;">
+              <span style="width:10px; height:10px; border-radius:50%; background:#ef4444; display:inline-block;"></span>
+              <span style="width:10px; height:10px; border-radius:50%; background:#f59e0b; display:inline-block;"></span>
+              <span style="width:10px; height:10px; border-radius:50%; background:#22c55e; display:inline-block;"></span>
+            </div>
+            <div style="flex:1; background:#fff; color:#475569; font-size:11.5px; padding:4px 12px; border-radius:7px; border:1px solid #cbd5e1;">
+              🔒 https://admin.greenmerge.vn — Bảng điều phối Ban quản lý
+            </div>
+          </div>
+          <div class="web-body">
+            <div class="web-card" style="border-left:none; border-right:none; border-top:none; padding:12px 18px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#15803d,#0284c7); color:#fff; font-weight:800; font-size:14px; display:grid; place-items:center;">GM</div>
+                <div>
+                  <div style="font-size:16px; font-weight:800; line-height:1.15;">GreenMerge Operations</div>
+                  <div style="font-size:11px; color:var(--w-subtle);">Một sự cố, một hồ sơ · Trung tâm tiếp nhận &amp; phát động Tình nguyện Xanh</div>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:7px; font-size:11.5px;">
+                <span class="web-alt" style="padding:5px 10px; border-radius:999px; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                  <span style="width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block;"></span> Đang kết nối
+                </span>
+                <span style="background:var(--w-primary); color:#fff; padding:6px 11px; border-radius:9px; font-weight:700;">👤 Ban quản lý HaUI</span>
+              </div>
+            </div>
+            <div style="padding:14px 18px 0; display:flex; flex-direction:column; gap:12px;">
+              <div class="kpi-grid">
+                <div class="web-card" style="border-radius:12px; padding:10px 12px; border-top:3px solid #0284c7;">
+                  <div style="font-size:11px; color:var(--w-muted); font-weight:600;">Mới tiếp nhận</div>
+                  <div style="font-size:21px; font-weight:800; margin:2px 0;">8</div>
+                  <div style="font-size:10px; color:var(--w-subtle);">Chờ khảo sát / phát động</div>
+                </div>
+                <div class="web-card" style="border-radius:12px; padding:10px 12px; border-top:3px solid #d97706;">
+                  <div style="font-size:11px; color:var(--w-muted); font-weight:600;">Đang xử lý</div>
+                  <div style="font-size:21px; font-weight:800; margin:2px 0;">5</div>
+                  <div style="font-size:10px; color:var(--w-subtle);">Các tổ đang thực hiện</div>
+                </div>
+                <div class="web-card" style="border-radius:12px; padding:10px 12px; border-top:3px solid #16a34a;">
+                  <div style="font-size:11px; color:var(--w-muted); font-weight:600;">Đã xử lý</div>
+                  <div style="font-size:21px; font-weight:800; margin:2px 0;">14</div>
+                  <div style="font-size:10px; color:var(--w-subtle);">Đã nghiệm thu &amp; đóng</div>
+                </div>
+                <div class="web-card" style="border-radius:12px; padding:10px 12px; border-top:3px solid #7c3aed;">
+                  <div style="font-size:11px; color:var(--w-muted); font-weight:600;">Hiệu quả gom trùng</div>
+                  <div style="font-size:21px; font-weight:800; margin:2px 0;">46</div>
+                  <div style="font-size:10px; color:var(--w-subtle);">41% báo cáo trùng đã gộp</div>
+                </div>
+                <div class="web-card" style="border-radius:12px; padding:10px 12px; border-top:3px solid #059669;">
+                  <div style="font-size:11px; color:var(--w-muted); font-weight:600;">Tình nguyện Xanh</div>
+                  <div style="font-size:21px; font-weight:800; margin:2px 0; color:var(--w-success);">6 buổi</div>
+                  <div style="font-size:10px; color:var(--w-subtle);">72 chứng nhận đã cấp</div>
+                </div>
+              </div>
+              <div class="web-split">
+                <div class="web-card" style="border-radius:14px; padding:14px; overflow-x:auto;">
+                  <div class="web-alt" style="display:inline-flex; flex-wrap:wrap; gap:3px; padding:3px; border-radius:10px; margin-bottom:12px;">
+                    <button onclick="switchWebTabInline('list')" style="border:none; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; background:${tabKey==='list'?'var(--w-surface)':'transparent'}; color:${tabKey==='list'?'var(--w-primary-dark)':'var(--w-muted)'};">Danh sách ưu tiên</button>
+                    <button onclick="switchWebTabInline('map')" style="border:none; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; background:${tabKey==='map'?'var(--w-surface)':'transparent'}; color:${tabKey==='map'?'var(--w-primary-dark)':'var(--w-muted)'};">Bản đồ điểm nóng</button>
+                    <button onclick="switchWebTabInline('volunteer')" style="border:none; padding:6px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; background:${tabKey==='volunteer'?'var(--w-surface)':'transparent'}; color:${tabKey==='volunteer'?'var(--w-success)':'var(--w-muted)'};">🌿 Duyệt Tình nguyện Xanh</button>
+                  </div>
+                  ${webLeftContent(tabKey)}
+                </div>
+                <div class="web-card" style="border-radius:14px; padding:14px;">
+                  ${webRightContent(tabKey)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function webLeftContent(tabKey) {
+      if (tabKey === 'map') {
+        return `
+          <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:11px; color:var(--w-muted); margin-bottom:8px; font-weight:600;">
+            <span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#0284c7;margin-right:4px;"></i>Mới tiếp nhận</span>
+            <span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#d97706;margin-right:4px;"></i>Đang xử lý</span>
+            <span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#16a34a;margin-right:4px;"></i>Đã xử lý</span>
+          </div>
+          <div class="hotspot-grid" style="position:relative; height:340px; border-radius:12px; border:1px solid var(--w-border); overflow:hidden;">
+            <div style="position:absolute; left:12%; top:14%; font-size:10.5px; font-weight:700; color:var(--w-subtle);">Khu Giảng đường A</div>
+            <div style="position:absolute; left:56%; top:16%; font-size:10.5px; font-weight:700; color:var(--w-subtle);">Ký túc xá nhà B</div>
+            <div style="position:absolute; left:22%; top:78%; font-size:10.5px; font-weight:700; color:var(--w-subtle);">Cổng chính đường 32</div>
+            <div style="position:absolute; left:64%; top:32%; width:46px; height:46px; border-radius:50%; background:#0284c7; color:#fff; display:grid; place-items:center; font-weight:800; font-size:14px; box-shadow:0 0 0 6px rgba(2,132,199,0.25); border:2px solid #fff;">4</div>
+            <div style="position:absolute; left:58%; top:48%; background:rgba(15,23,42,0.86); color:#fff; font-size:10px; padding:3px 7px; border-radius:6px;">Rác sau KTX B (4 ảnh)</div>
+            <div style="position:absolute; left:28%; top:56%; width:38px; height:38px; border-radius:50%; background:#d97706; color:#fff; display:grid; place-items:center; font-weight:800; font-size:13px; box-shadow:0 0 0 5px rgba(217,119,6,0.25); border:2px solid #fff;">2</div>
+            <div style="position:absolute; left:16%; top:69%; background:rgba(15,23,42,0.86); color:#fff; font-size:10px; padding:3px 7px; border-radius:6px;">Ổ gà cổng A (2 ảnh)</div>
+            <div style="position:absolute; left:40%; top:24%; width:32px; height:32px; border-radius:50%; background:#16a34a; color:#fff; display:grid; place-items:center; font-weight:800; font-size:12px; border:2px solid #fff;">3</div>
+            <div style="position:absolute; left:78%; top:66%; width:28px; height:28px; border-radius:50%; background:#0284c7; color:#fff; display:grid; place-items:center; font-weight:800; font-size:11px; border:2px solid #fff;">1</div>
+          </div>
+        `;
+      }
+      if (tabKey === 'volunteer') {
+        return `
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--w-border); color:var(--w-subtle); font-size:10.5px; text-transform:uppercase;">
+                <th style="text-align:left; padding:7px 6px;">Trước / Sau</th>
+                <th style="text-align:left; padding:7px 6px;">Buổi Tình nguyện Xanh</th>
+                <th style="text-align:left; padding:7px 6px;">Trạng thái</th>
+                <th style="text-align:center; padding:7px 6px;">TNV</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background:var(--w-primary-soft); border-bottom:1px solid var(--w-border);">
+                <td style="padding:8px 6px;"><div style="display:flex; gap:4px;"><img src="${PHOTOS.trashBefore}" style="width:36px; height:36px; border-radius:7px; object-fit:cover;" /><img src="${PHOTOS.trashAfter}" style="width:36px; height:36px; border-radius:7px; object-fit:cover;" /></div></td>
+                <td style="padding:8px 6px;"><div style="font-weight:700;">Chủ nhật Xanh — Dọn lối đi sau KTX B</div><div style="font-size:11px; color:var(--w-subtle);">📍 Cổng B KTX · BQL phát động</div></td>
+                <td style="padding:8px 6px;"><span style="background:var(--w-warn-soft); color:var(--w-warn); padding:3px 8px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap;">Chờ duyệt ảnh Sau</span></td>
+                <td style="padding:8px 6px; text-align:center; font-weight:800;">15/15</td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--w-border);">
+                <td style="padding:8px 6px;"><img src="${PHOTOS.floodMild}" style="width:36px; height:36px; border-radius:7px; object-fit:cover;" /></td>
+                <td style="padding:8px 6px;"><div style="font-weight:700;">Khơi thông lá cây tắc cống sân B</div><div style="font-size:11px; color:var(--w-subtle);">📍 Sân thể thao B · Đoàn trường phát động</div></td>
+                <td style="padding:8px 6px;"><span style="background:var(--w-primary-soft); color:var(--w-primary-dark); padding:3px 8px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap;">Đang tuyển TNV</span></td>
+                <td style="padding:8px 6px; text-align:center; font-weight:800;">7/10</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 6px;"><div style="display:flex; gap:4px;"><img src="${PHOTOS.trashBefore}" style="width:36px; height:36px; border-radius:7px; object-fit:cover;" /><img src="${PHOTOS.trashAfter}" style="width:36px; height:36px; border-radius:7px; object-fit:cover;" /></div></td>
+                <td style="padding:8px 6px;"><div style="font-weight:700;">Thu gom rác nhựa sau Hội chợ Sinh viên</div><div style="font-size:11px; color:var(--w-subtle);">📍 Quảng trường nhà A1</div></td>
+                <td style="padding:8px 6px;"><span style="background:var(--w-success-soft); color:var(--w-success); padding:3px 8px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap;">Đã duyệt &amp; Cấp CN</span></td>
+                <td style="padding:8px 6px; text-align:center; font-weight:800;">20/20</td>
+              </tr>
+            </tbody>
+          </table>
+        `;
+      }
+      return `
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--w-border); color:var(--w-subtle); font-size:10.5px; text-transform:uppercase;">
+              <th style="text-align:left; padding:7px 6px;">Ảnh</th>
+              <th style="text-align:left; padding:7px 6px;">Phân loại &amp; Trạng thái</th>
+              <th style="text-align:left; padding:7px 6px;">Nội dung sự cố &amp; Vị trí</th>
+              <th style="text-align:center; padding:7px 6px;">Gộp</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:var(--w-primary-soft); border-bottom:1px solid var(--w-border);">
+              <td style="padding:8px 6px;"><img src="${PHOTOS.trashBefore}" style="width:40px; height:40px; border-radius:8px; object-fit:cover;" /></td>
+              <td style="padding:8px 6px;"><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;"><span style="background:var(--w-success-soft); color:var(--w-success); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Rác thải · Trung bình</span><span style="background:var(--w-primary-soft); color:var(--w-primary-dark); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Mới tiếp nhận</span></div></td>
+              <td style="padding:8px 6px;"><div style="font-weight:700;">Bãi rác nhựa và ly đồ uống sau KTX nhà B</div><div style="font-size:11px; color:var(--w-subtle);">📍 Sau KTX B · Đủ chuẩn phát động TNV</div></td>
+              <td style="padding:8px 6px; text-align:center;"><span style="background:var(--w-alt); border:1px solid var(--w-border); padding:3px 8px; border-radius:999px; font-weight:800;">4 ảnh</span></td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--w-border);">
+              <td style="padding:8px 6px;"><img src="${PHOTOS.pothole1}" style="width:40px; height:40px; border-radius:8px; object-fit:cover;" /></td>
+              <td style="padding:8px 6px;"><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;"><span style="background:var(--w-danger-soft); color:var(--w-danger); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Ổ gà · Cao</span><span style="background:var(--w-warn-soft); color:var(--w-warn); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Đang xử lý</span></div></td>
+              <td style="padding:8px 6px;"><div style="font-weight:700;">Ổ gà sâu đọng nước mặt đường cổng A</div><div style="font-size:11px; color:var(--w-subtle);">🏛️ Tổ đường bộ · Khóa TNV (an toàn)</div></td>
+              <td style="padding:8px 6px; text-align:center;"><span style="background:var(--w-alt); border:1px solid var(--w-border); padding:3px 8px; border-radius:999px; font-weight:800;">2 ảnh</span></td>
+            </tr>
+            <tr>
+              <td style="padding:8px 6px;"><img src="${PHOTOS.floodMild}" style="width:40px; height:40px; border-radius:8px; object-fit:cover;" /></td>
+              <td style="padding:8px 6px;"><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;"><span style="background:var(--w-primary-soft); color:var(--w-primary-dark); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Ngập nước · Thấp</span><span style="background:var(--w-primary-soft); color:var(--w-primary-dark); padding:2px 7px; border-radius:999px; font-size:10.5px; font-weight:700;">Mới tiếp nhận</span></div></td>
+              <td style="padding:8px 6px;"><div style="font-weight:700;">Lá cây che miệng cống gây đọng nước nhẹ</div><div style="font-size:11px; color:var(--w-subtle);">📍 Sân thể thao B · Đủ chuẩn phát động TNV</div></td>
+              <td style="padding:8px 6px; text-align:center;"><span style="background:var(--w-alt); border:1px solid var(--w-border); padding:3px 8px; border-radius:999px; font-weight:800;">3 ảnh</span></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    function webRightContent(tabKey) {
+      if (tabKey === 'volunteer') {
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+            <div>
+              <div style="font-size:14.5px; font-weight:800;">🌿 Chủ nhật Xanh — Dọn lối đi sau KTX B</div>
+              <div style="display:flex; gap:5px; margin-top:4px;">
+                <span style="background:var(--w-warn-soft); color:var(--w-warn); padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700;">Chờ duyệt ảnh Sau</span>
+                <span style="background:var(--w-success-soft); color:var(--w-success); padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700;">Rác thải</span>
+              </div>
+            </div>
+            <span style="background:var(--w-primary-soft); color:var(--w-primary-dark); padding:4px 9px; border-radius:999px; font-size:11.5px; font-weight:800;">15/15 TNV</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div class="web-alt" style="border-radius:10px; padding:6px;">
+              <img src="${PHOTOS.trashBefore}" style="width:100%; height:110px; object-fit:cover; border-radius:7px;" />
+              <div style="font-size:10.5px; font-weight:700; margin-top:4px; color:var(--w-danger);">📷 Ảnh TRƯỚC (Sự cố gốc)</div>
+            </div>
+            <div class="web-alt" style="border-radius:10px; padding:6px;">
+              <img src="${PHOTOS.trashAfter}" style="width:100%; height:110px; object-fit:cover; border-radius:7px;" />
+              <div style="font-size:10.5px; font-weight:700; margin-top:4px; color:var(--w-success);">✨ Ảnh SAU (TNV nộp)</div>
+            </div>
+          </div>
+          <div class="web-alt" style="border-radius:10px; padding:9px 11px; margin-bottom:10px; font-size:11.5px;">
+            <div style="font-weight:700; margin-bottom:4px;">Danh sách sinh viên tham gia (15 người)</div>
+            <div style="color:var(--w-muted);">Nguyễn Minh An · Lê Thảo Chi · Trần Gia Bảo · Phạm Đức Huy · <i>(+11 sinh viên khác)</i></div>
+          </div>
+          <div class="web-alt" style="border-radius:10px; padding:10px 11px;">
+            <div style="font-size:12px; font-weight:800; margin-bottom:6px;">Đánh giá &amp; Cấp Giấy Chứng Nhận Xanh</div>
+            <div style="background:var(--w-surface); border:1px solid var(--w-border); border-radius:8px; padding:7px 9px; font-size:11.5px; color:var(--w-subtle); margin-bottom:8px;">
+              Nhận xét: “Khu vực đã dọn rất sạch sẽ, rác nhựa được phân loại gọn gàng!”
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:7px;">
+              <span style="flex:1; background:#15803d; color:#fff; text-align:center; padding:8px 10px; border-radius:9px; font-size:11.5px; font-weight:800;">✓ Phê duyệt, Đóng hồ sơ &amp; Cấp 15 chứng nhận</span>
+              <span style="border:1px solid var(--w-danger); color:var(--w-danger); padding:8px 10px; border-radius:9px; font-size:11.5px; font-weight:700;">✕ Yêu cầu bổ sung</span>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+          <div>
+            <div style="font-size:14.5px; font-weight:800;">Bãi rác nhựa sau KTX nhà B</div>
+            <div style="font-size:11px; color:var(--w-subtle);">Mã hồ sơ: #TR84B209 · Đã gộp 4 báo cáo từ sinh viên</div>
+          </div>
+          <span style="background:var(--w-success-soft); color:var(--w-success); padding:3px 9px; border-radius:999px; font-size:11px; font-weight:800;">An toàn Tầng 2</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
+          <div style="background:var(--w-primary-soft); color:var(--w-primary-dark); border:1px solid var(--w-primary); text-align:center; padding:5px; border-radius:8px; font-size:11px; font-weight:800;">1. Tiếp nhận</div>
+          <div class="web-alt" style="color:var(--w-subtle); text-align:center; padding:5px; border-radius:8px; font-size:11px; font-weight:700;">2. Đang xử lý</div>
+          <div class="web-alt" style="color:var(--w-subtle); text-align:center; padding:5px; border-radius:8px; font-size:11px; font-weight:700;">3. Đã xử lý</div>
+        </div>
+        <img src="${PHOTOS.trashBefore}" style="width:100%; height:132px; object-fit:cover; border-radius:10px; border:1px solid var(--w-border); margin-bottom:10px;" />
+        <div class="web-alt" style="border-radius:10px; padding:9px 11px; font-size:11.5px; margin-bottom:10px;">
+          <div><b>Đơn vị phụ trách:</b> Tổ vệ sinh KTX (Phân vùng tự động)</div>
+          <div style="margin-top:3px;"><b>Địa chỉ:</b> Lối đi sau Ký túc xá B, ĐH Công nghiệp Hà Nội</div>
+        </div>
+        <div style="background:var(--w-success-soft); border:1.5px solid #22c55e; border-radius:11px; padding:10px 11px;">
+          <div style="font-size:12px; font-weight:800; color:var(--w-success); margin-bottom:4px;">🌿 Lựa chọn phát động Buổi Tình Nguyện Xanh</div>
+          <div style="font-size:11px; color:var(--w-muted); margin-bottom:8px;">Sự cố rác thải cơ bản, an toàn cho sinh viên. Phát động buổi dọn giúp tiết kiệm chi phí vệ sinh ngoài giờ.</div>
+          <div style="background:#15803d; color:#fff; text-align:center; padding:8px; border-radius:9px; font-size:12px; font-weight:800;">🚀 Phát động Buổi Tình Nguyện Xanh (Mở đăng ký)</div>
+        </div>
+      `;
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      ['both', 'mobile', 'web'].forEach(m => {
+        document.getElementById('view-' + m).classList.toggle('hidden', m !== mode);
+        document.getElementById('mode-' + m).classList.toggle('btn-active', m === mode);
+      });
+      renderCurrent();
+    }
+    function setPairPreset(preset) {
+      currentPair = preset;
+      ['tier1', 'tier2', 'cert'].forEach(p => {
+        document.getElementById('preset-' + p).classList.toggle('btn-active', p === preset);
+      });
+      renderBoth();
+    }
+    function selectPhoneScreen(sc) {
+      currentPhoneScreen = sc;
+      document.querySelectorAll('.ps-btn').forEach(b => b.classList.toggle('btn-active', b.dataset.ps === sc));
+      renderMobile();
+    }
+    function selectWebTab(tab) {
+      currentWebTab = tab;
+      document.querySelectorAll('.wt-btn').forEach(b => b.classList.toggle('btn-active', b.dataset.wt === tab));
+      renderWeb();
+    }
+    function switchWebTabInline(tab) {
+      currentWebTab = tab;
+      if (currentMode === 'web') selectWebTab(tab);
+      else renderBoth(tab);
+    }
+    function toggleWebTheme() {
+      webDark = !webDark;
+      document.getElementById('btn-web-theme').textContent = webDark ? '☀️ Chuyển giao diện Sáng' : '🌙 Chuyển giao diện Tối';
+      renderCurrent();
+    }
+    function toggleCleanMode() { document.body.classList.toggle('capture-clean'); }
+
+    function renderBoth(overrideWebTab) {
+      const cfg = {
+        tier1: { phone: 'result', web: 'map', pCap: '📱 Điện thoại · AI phân tích & Đối chiếu gộp 2 ảnh', wCap: '💻 Trang Quản trị · Bản đồ điểm nóng GPS' },
+        tier2: { phone: 'volunteer', web: 'volunteer', pCap: '📱 Điện thoại · Buổi Tình Nguyện Xanh & Ảnh Trước–Sau', wCap: '💻 Trang Quản trị · Đối chiếu Trước–Sau & Cấp chứng nhận' },
+        cert: { phone: 'home', web: 'list', pCap: '📱 Điện thoại · Trang chủ Cộng đồng Xanh', wCap: '💻 Trang Quản trị · 5 chỉ số KPI & Phát động TNV' },
+      }[currentPair];
+      document.getElementById('both-phone-host').innerHTML = renderPhoneFrame(cfg.phone);
+      document.getElementById('both-web-host').innerHTML = renderWebAdmin(overrideWebTab || cfg.web);
+      document.getElementById('both-phone-caption').textContent = cfg.pCap;
+      document.getElementById('both-web-caption').textContent = cfg.wCap;
+    }
+    function renderMobile() {
+      const host = document.getElementById('mobile-stage');
+      if (currentPhoneScreen === 'gallery') {
+        host.innerHTML = ['home', 'result', 'volunteer'].map(k => renderPhoneFrame(k)).join('');
+      } else {
+        host.innerHTML = renderPhoneFrame(currentPhoneScreen);
+      }
+    }
+    function renderWeb() {
+      document.getElementById('web-stage').innerHTML = renderWebAdmin(currentWebTab);
+    }
+    function renderCurrent() {
+      if (currentMode === 'both') renderBoth();
+      else if (currentMode === 'mobile') renderMobile();
+      else renderWeb();
+    }
+
+    setPairPreset('tier2');
+    selectPhoneScreen('home');
+    selectWebTab('volunteer');
+    setMode('both');
+  </script>
+</body>
+</html>
